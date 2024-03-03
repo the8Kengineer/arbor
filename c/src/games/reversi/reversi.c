@@ -1,9 +1,7 @@
 #include <stdio.h>
-#include <stdint.h>
 #include <assert.h>
 #include <math.h>
 #include "arbor.h"
-#include "reversi.h"
 #include "reversi_bb.h"
 #include "random.h"
 
@@ -18,7 +16,7 @@ typedef struct Reversi_t
     int turn;
 } Reversi;
 
-Arbor_Game reversi_new(void)
+Arbor_Game arbor_new(void)
 {
     Reversi* rev = malloc(sizeof(Reversi));
 
@@ -35,7 +33,7 @@ Arbor_Game reversi_new(void)
     return (Arbor_Game) {rev};
 }
 
-void reversi_make(Arbor_Game game, int action)
+void arbor_make(Arbor_Game game, int action)
 {
     Reversi* rev = game.p;
     bb f = rev->f;
@@ -125,7 +123,7 @@ void reversi_make(Arbor_Game game, int action)
     }
 }
 
-Arbor_Game reversi_copy(Arbor_Game game)
+Arbor_Game arbor_copy(Arbor_Game game)
 {
     Reversi* p = malloc(sizeof(Reversi));
     Reversi* t = game.p;
@@ -136,12 +134,12 @@ Arbor_Game reversi_copy(Arbor_Game game)
     return copy;
 }
 
-void reversi_delete(Arbor_Game game)
+void arbor_delete(Arbor_Game game)
 {
     free(game.p);
 }
 
-int reversi_actions(Arbor_Game game)
+int arbor_actions(Arbor_Game game)
 {
     Reversi* rev = game.p;
     int sum = bb_popcount(rev->a);
@@ -152,14 +150,14 @@ int reversi_actions(Arbor_Game game)
     return sum;
 }
 
-int reversi_side(Arbor_Game game)
+int arbor_side(Arbor_Game game)
 {
     Reversi* reversi = game.p;
 
     return reversi->side;
 }
 
-int reversi_eval(Arbor_Game game)
+int arbor_eval(Arbor_Game game)
 {
     Reversi* rev = game.p;
 
@@ -195,7 +193,7 @@ int reversi_eval(Arbor_Game game)
     }
 }
 
-void reversi_show(Arbor_Game game)
+void arbor_show(Arbor_Game game)
 {
     Reversi* rev = game.p;
     bb moves = rev->a;
@@ -221,7 +219,7 @@ void reversi_show(Arbor_Game game)
     bb_show(X, O, moves);
 }
 
-void reversi_vector(Arbor_Game game)
+void arbor_vector(Arbor_Game game)
 {
     Reversi* rev = game.p;
     bb p1 = (rev->side == ARBOR_P1) ? rev->f : rev->e;
@@ -240,7 +238,7 @@ void reversi_vector(Arbor_Game game)
     }
 }
 
-void reversi_prob(Arbor_Game game)
+void arbor_prob(Arbor_Game game)
 {
     Reversi* rev = game.p;
     bb p1 = (rev->side == ARBOR_P1) ? rev->f : rev->e;
