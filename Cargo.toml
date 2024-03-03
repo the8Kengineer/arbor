@@ -3,6 +3,7 @@
 members = [
     "arbor",
     "mancala",
+    "onestone",
     "reversi",
     "connect4",
     "tictactoe",
