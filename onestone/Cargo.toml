@@ -1,0 +1,28 @@
+[package]
+name = "onestone"
+version = "0.1.0"
+authors = ["prestonmlangford <prestonmlangford@gmail.com>"]
+edition = "2018"
+description = "An implementation of EinStein würfelt nicht!"
+repository = "https://github.com/prestonmlangford/arbor.git"
+license = "MIT"
+readme = "README.md"
+keywords = ["mcts", "ai", "game", "search", "tree"]
+categories = ["algorithms", "game-development", "games"]
+
+[dependencies]
+lazy_static = "1.4.0"
+arbor = { path = "../arbor" }
+instant = { version = "0.1", features = [ "wasm-bindgen" ] }
+wasm-bindgen = "0.2.78"
+getrandom = {version = "0.2", features = ["js"]}
+serde_json = "1.0.74"
+
+[[bin]]
+name = "onestone"
+path = "src/main.rs"
+
+[lib]
+crate-type = ["rlib"]
+name = "onestone"
+path = "src/onestone.rs"
