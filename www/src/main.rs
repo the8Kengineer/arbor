@@ -29,6 +29,9 @@ fn app(_props: &Props) -> Html {
             <div class="main-layout-cell connect4">
                 <GameUI<connect4::connect4::Disc,Column,Connect4>/>
             </div>
+            <div class="main-layout-cell onestone">
+                <GameUI<onestone::Side,onestone::Move,onestone::Onestone>/>
+            </div>
         </div>
     }
 }
