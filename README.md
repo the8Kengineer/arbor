@@ -2,13 +2,14 @@
 
 This crate provides a generic interface to the Monte Carlo Tree Search algorithm. It allows a developer to implement an AI agent for a two player game without the need to describe heuristics or strategies specific to the game. 
 
-Examples using arbor are provided on [GitHub](https://github.com/prestonmlangford/arbor.git) including:
+Examples using arbor are provided on [GitHub](https://github.com/the8Kengineer/arbor.git) including:
 - Reversi
 - Connect 4
 - Mancala
 - Tic-Tac-Toe
+- OneStone
 
-These examples are demonstrated graphically with Yew on the Arbor [GitHub.io](https://prestonmlangford.github.io/arbor/). 
+These examples are demonstrated graphically with Yew on the Arbor [GitHub.io](https://the8Kengineer.github.io/arbor/). 
 ## Documentation
 
 Documentation is provided on [Docs.rs](https://docs.rs/arbor).
