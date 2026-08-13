@@ -21,7 +21,7 @@ pub fn description() -> Html {
                        demonstration, the AI agent is compiled to WASM and it 
                        runs in your browser. The UI for this website was 
                        developed with Yew. Source code can be found on "}
-                    <a href="https://github.com/prestonmlangford/arbor">{"GitHub"}</a>
+                    <a href="https://github.com/the8Kengineer/arbor">{"GitHub"}</a>
                 </p>
                 <p>{"Description of controls and indications:"}</p>
                 <ul class="description-controls">
