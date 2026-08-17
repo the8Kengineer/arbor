@@ -184,9 +184,16 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
             s.actions(&mut |a|{
                 self.actions.push(a);
             });
-            
-            //use rejection sampling to choose a random action
+
             let max = self.actions.len();
+            assert!(
+                max > 0,
+                "GameState::actions() yielded zero actions for a state with gameover() == None ({:?}). \
+                 Every non-terminal state must offer at least one legal action.",
+                s
+            );
+
+            //use rejection sampling to choose a random action
             let mask = max.next_power_of_two() - 1;
             loop {
                 let r = (self.rand.next_u64() as usize) & mask;

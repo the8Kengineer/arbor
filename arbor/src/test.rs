@@ -156,6 +156,16 @@ fn expansion_panics_clearly_on_zero_actions_state() {
 }
 
 #[test]
+#[should_panic(expected = "zero actions")]
+fn rollout_panics_clearly_on_zero_actions_state() {
+    //Without custom_evaluation, the root's forced first expansion immediately recurses into its
+    //one real child (depth 1), whose first visit rolls out - hitting Broken's depth==1 state
+    //inside rollout()'s own loop, isolating this regression test to the rollout code path.
+    let mut mcts = MCTS::new(Broken::new());
+    mcts.ponder(1);
+}
+
+#[test]
 fn ponder_zero_after_real_search_is_still_a_noop() {
     let mut mcts = MCTS::new(Countdown::new(10));
     mcts.ponder(50);
