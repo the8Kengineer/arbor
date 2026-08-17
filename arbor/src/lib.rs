@@ -2,6 +2,8 @@
 
 mod search;
 mod builder;
+#[cfg(test)]
+mod test;
 use std::fmt::Debug;
 use std::fmt::Display;
 use serde::Serialize;

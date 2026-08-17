@@ -85,6 +85,10 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
     
     ///Call this method to search the root game state a given number of iterations. This method may be called any number of times to improve the search results. Call ply or best to get the current search results.
     pub fn ponder(&mut self, n: usize) {
+        if n == 0 {
+            return;
+        }
+
         if self.stack.len() == 0 {
             let mut actions = Vec::new();
             self.root.actions(&mut |a| actions.push(a));
