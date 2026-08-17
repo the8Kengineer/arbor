@@ -106,6 +106,14 @@ impl GameState<Side,Take> for Countdown {
             _ => 1.0,
         }
     }
+
+    ///Countdown's state is fully characterized by (n, side): Take(1) then Take(2) reaches the
+    ///same position as Take(2) then Take(1) (same total removed, same number of plies so side
+    ///alternates back to the same player) - genuine, frequent transpositions, unlike a game
+    ///whose state depends on the exact move sequence. Encodes uniquely for any realistic n.
+    fn hash(&self) -> u64 {
+        ((self.n as u64) << 1) | (self.side == Side::B) as u64
+    }
 }
 
 const SLOTS: usize = 8;
@@ -591,6 +599,187 @@ fn advance_into_an_already_solved_child_recovers_instead_of_getting_stuck() {
     mcts.ponder(1000);
     assert!(mcts.info.n > 0,"search must still make real progress after advancing into a previously-solved child");
     assert_eq!(mcts.best(),Some(Take(2)),"n=2 is a forced win for Side::B via Take(2) (leaving n=0)");
+}
+
+#[test]
+fn transposition_detects_a_genuine_transposition() {
+    //Take(1) then Take(2) and Take(2) then Take(1) both reach n=7, side=A - the same position
+    //by two different move orders. With with_transposition() enabled and Countdown's hash()
+    //identifying that, the second path to reach it should collapse into a Node::Transpose
+    //pointing at the first, and self.map should have recorded the hash.
+    let mut mcts = MCTS::new(Countdown::new(10)).with_transposition();
+    mcts.ponder(500);
+
+    assert!(!mcts.map.is_empty(),"the transposition table should have recorded at least one hash");
+
+    let found_transpose = mcts.stack.iter().any(|node| matches!(node,Node::Transpose(_,_,_)));
+    assert!(found_transpose,"expected at least one Node::Transpose after 500 iterations on a game with frequent transpositions");
+}
+
+#[test]
+fn transposition_shares_stats_across_both_paths_to_the_same_position() {
+    let mut mcts = MCTS::new(Countdown::new(10)).with_transposition();
+    mcts.ponder(500);
+
+    let transpose = mcts.stack.iter().enumerate().find_map(|(i,node)| {
+        if let Node::Transpose(_,_,u) = node {Some((i,*u))} else {None}
+    });
+    let (_,target) = transpose.expect("expected at least one transposition after 500 iterations");
+
+    assert!(mcts.map.values().any(|&v| v == target),"the transposition map should record the shared target's index");
+
+    let n_before = match &mcts.stack[target] {
+        Node::Leaf(_,_,_,_,n) | Node::Branch(_,_,_,_,n,_) => *n,
+        other => panic!("expected the transposition target to be a Leaf or Branch with real stats, got {:?}",other),
+    };
+    assert!(n_before > 0,"the transposition target should already have real accumulated visits");
+
+    //Ponder further and confirm the target keeps accumulating - both paths continue to route
+    //into the same shared node rather than diverging into separate, unshared statistics.
+    mcts.ponder(500);
+    let n_after = match &mcts.stack[target] {
+        Node::Leaf(_,_,_,_,n) | Node::Branch(_,_,_,_,n,_) => *n,
+        other => panic!("expected the transposition target to remain a Leaf or Branch, got {:?}",other),
+    };
+    assert!(n_after > n_before,"the shared target should keep accumulating visits from further search");
+}
+
+#[test]
+fn transposition_does_not_let_the_solver_see_through_it() {
+    //A Transpose sibling pointing at a *proven win* target must not let solved_value() treat
+    //the parent branch as solved - it conservatively treats any Transpose as unresolved (see
+    //solved_value's doc comment) rather than following the pointer to check the real target.
+    let mut mcts = MCTS::new(Countdown::new(10));
+    mcts.ponder(1);
+
+    let c = match mcts.stack[0] {
+        Node::Branch(_,_,_,_,_,c) => c,
+        _ => panic!("expected root to be a branch after one iteration"),
+    };
+
+    let target = mcts.stack.len();
+    mcts.stack.push(Node::Terminal(false,Take(1),Side::B,1.0)); // a proven win for Side::B
+
+    mcts.stack[c] = Node::Transpose(true,Take(1),target);
+    mcts.stack[c + 1] = Node::Unknown(true,Take(2));
+    mcts.stack[c + 2] = Node::Unknown(false,Take(3));
+
+    mcts.ponder(1);
+
+    match &mcts.stack[0] {
+        Node::Branch(_,_,_,_,_,_) => {},
+        other => panic!("expected the root to remain unsolved (still a Branch) despite a Transpose sibling pointing at a proven win, got {:?}",other),
+    }
+}
+
+#[test]
+fn transposition_sibling_never_receives_rave_credit_even_when_actually_played() {
+    //Force Take(1) (which will be a Transpose) to be the only reasonable-looking choice, so it's
+    //actually selected and its action really does get pushed onto self.played this simulation -
+    //unlike rave_credits_a_sibling_beyond_its_own_direct_visits, which only shows Unknown
+    //siblings go uncredited (they never get selected over an untried node anyway). This should
+    //still result in zero RAVE credit for the Transpose sibling itself, per rave_update's
+    //documented exclusion (see its doc comment): only Leaf/Branch siblings are credited.
+    let mut mcts = MCTS::new(Countdown::new(10)).with_rave().with_transposition();
+    mcts.ponder(1);
+
+    let c = match mcts.stack[0] {
+        Node::Branch(_,_,_,_,_,c) => c,
+        _ => panic!("expected root to be a branch after one iteration"),
+    };
+
+    let target = mcts.stack.len();
+    mcts.stack.push(Node::Leaf(false,Take(99),Side::B,5.0,10)); // decent-looking, root-perspective avg 0.5
+    if mcts.use_rave {
+        mcts.rave.push((0,0.0));
+    }
+
+    mcts.stack[c] = Node::Transpose(true,Take(1),target);
+    mcts.stack[c + 1] = Node::Terminal(true,Take(2),Side::B,1.0); // proven loss for root (Side::A)
+    mcts.stack[c + 2] = Node::Terminal(false,Take(3),Side::B,1.0); // proven loss for root (Side::A)
+
+    mcts.ponder(1);
+
+    assert_eq!(mcts.rave[c],(0,0.0),"a Transpose sibling must never receive RAVE credit, even though its own action was actually played this simulation");
+}
+
+#[test]
+fn advance_resets_any_transpose_nodes_in_the_kept_subtree_to_unknown() {
+    let mut mcts = MCTS::new(Countdown::new(10)).with_transposition();
+    mcts.ponder(1);
+
+    let c = match mcts.stack[0] {
+        Node::Branch(_,_,_,_,_,c) => c,
+        _ => panic!("expected root to be a branch after one iteration"),
+    };
+
+    //Build a small subtree under Take(1) containing a Transpose, and make Take(1) the move
+    //we'll advance into - guaranteeing the Transpose is inside the *kept* part of the tree, not
+    //just present somewhere in the whole (possibly discarded) tree.
+    let target = mcts.stack.len();
+    mcts.stack.push(Node::Leaf(false,Take(99),Side::A,3.0,6));
+
+    let grandchildren = mcts.stack.len();
+    mcts.stack.push(Node::Leaf(true,Take(1),Side::A,2.0,4));
+    mcts.stack.push(Node::Transpose(false,Take(2),target));
+
+    mcts.stack[c] = Node::Branch(true,Take(1),Side::B,5.0,10,grandchildren);
+
+    let mcts = mcts.advance(Take(1));
+
+    let has_transpose = mcts.stack.iter().any(|node| matches!(node,Node::Transpose(_,_,_)));
+    assert!(!has_transpose,"relocate() should reset every Transpose node in the relocated subtree to Unknown");
+
+    let has_unknown = mcts.stack.iter().any(|node| matches!(node,Node::Unknown(_,_)));
+    assert!(has_unknown,"the Transpose node should have become a fresh Unknown, not simply vanished");
+}
+
+#[test]
+fn puct_policy_prior_for_a_transpose_uses_its_own_action_not_the_targets() {
+    //Take(2) is policy-favored, but represented as a Transpose whose target is deliberately
+    //labeled Take(999) internally - if the implementation mistakenly looked up the prior using
+    //the target's own stored action instead of the Transpose's outer action (see
+    //exploration_term's call site in uct()'s Transpose arm), it would look up policy(Take(999))
+    //(the default, unfavored) instead of policy(Take(2)) (strongly favored), and the tie
+    //wouldn't be broken in Take(2)'s favor.
+    let mut mcts = MCTS::new(Countdown::with_policy_bias(10,2))
+        .with_puct()
+        .with_transposition()
+        .with_expansion_minimum(50);
+    mcts.ponder(1);
+
+    let c = match mcts.stack[0] {
+        Node::Branch(_,_,_,_,_,c) => c,
+        _ => panic!("expected root to be a branch after one iteration"),
+    };
+
+    let target = mcts.stack.len();
+    mcts.stack.push(Node::Leaf(false,Take(999),Side::B,5.0,10)); // root-perspective avg 0.5, n=10
+
+    mcts.stack[c] = Node::Leaf(true,Take(1),Side::B,5.0,10);
+    mcts.stack[c + 1] = Node::Transpose(true,Take(2),target);
+    mcts.stack[c + 2] = Node::Leaf(false,Take(3),Side::B,5.0,10);
+    if let Node::Branch(s,a,p,w,_,cc) = mcts.stack[0] {
+        mcts.stack[0] = Node::Branch(s,a,p,w,30,cc);
+    }
+
+    mcts.ponder(1);
+
+    let n_after = match &mcts.stack[target] {
+        Node::Leaf(_,_,_,_,n) => *n,
+        other => panic!("expected the transposition target to remain a Leaf, got {:?}",other),
+    };
+    assert_eq!(n_after,11,"the policy-favored move (Take(2), via its Transpose) should have received the additional visit");
+}
+
+#[test]
+fn transposition_still_converges_to_the_correct_move() {
+    //Same position as best_converges_to_the_game_theoretically_correct_move, with
+    //with_transposition() enabled - none of the sharing/short-circuiting it introduces should
+    //change the actual answer.
+    let mut mcts = MCTS::new(Countdown::new(6)).with_transposition();
+    mcts.ponder(20000);
+    assert_eq!(mcts.best(),Some(Take(2)));
 }
 
 #[test]
