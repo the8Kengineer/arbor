@@ -29,6 +29,7 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
             use_custom_evaluation: false,
             use_transposition: false,
             use_rave: false,
+            use_puct: false,
             info: Info::default(),
             root: root,
             stack: Vec::new(),
@@ -441,7 +442,22 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
         }
     }
 
-    fn uct(&self,index: usize, player: P, nt: u32) -> (bool,A,f32) {
+    ///Compute the exploration/uncertainty bonus for a child with `n` real visits, given the
+    ///parent's total visits `nt` (as f32) and the action leading to that child from `state`
+    ///(the parent's own game state): the classic UCB1 term (c * sqrt(ln(nt) / n)) by default, or
+    ///the AlphaZero-style PUCT term (c * P(a) * sqrt(nt) / (1 + n)), weighted by `state`'s prior
+    ///for `action`, when with_puct is enabled.
+    fn exploration_term(&self,state: &S,action: A,n: f32,nt: f32) -> f32 {
+        let c = self.exploration;
+        if self.use_puct {
+            let prior = state.policy(action);
+            c * prior * nt.sqrt() / (1.0 + n)
+        } else {
+            c * (nt.ln()/n).sqrt()
+        }
+    }
+
+    fn uct(&self,state: &S,index: usize, player: P, nt: u32) -> (bool,A,f32) {
 
         match self.stack[index] {
             Node::Terminal(s,a,p,w) => {
@@ -458,8 +474,7 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                 let avg = self.rave_blend(index,p,player,(w/nf) as f32,nf);
                 let n = n as f32;
                 let nt = nt as f32;
-                let c = self.exploration;
-                let val = avg + c*(nt.ln()/n).sqrt();
+                let val = avg + self.exploration_term(state,a,n,nt);
                 (s,a,val)
             },
             Node::Transpose(s,a,u) => {
@@ -479,8 +494,12 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                         let avg = self.rave_blend(u,p,player,(w/nf) as f32,nf);
                         let n = n as f32;
                         let nt = nt as f32;
-                        let c = self.exploration;
-                        avg + c*(nt.ln()/n).sqrt()
+                        //The policy prior is evaluated for `a` (this Transpose's own action,
+                        //leading from `state` to this child) even though the value/visit
+                        //statistics come from the shared transposed target at `u` - the prior is
+                        //about how promising the *action* looks from the *actual* parent, which
+                        //transposition doesn't change.
+                        avg + self.exploration_term(state,a,n,nt)
                     },
                     Node::Transpose(_,_,_) => {
                         panic!("should not be possible to transpose to another transpose");
@@ -548,7 +567,7 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                 let mut sibling = Some(c);
 
                 while let Some(u) = sibling {
-                    let (s,a,uct) = self.uct(u,player,n);
+                    let (s,a,uct) = self.uct(state,u,player,n);
                     if uct > best {
                         best = uct;
                         selection = Some((a,u));

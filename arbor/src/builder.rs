@@ -35,6 +35,12 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
         self
     }
 
+    ///Enables PUCT (Predictor + UCT, AlphaZero-style): replaces the classic UCB1 exploration term (c * sqrt(ln(N) / n)) with one weighted by GameState::policy's prior (c * P(a) * sqrt(N) / (1 + n)), letting a trained or hand-tuned policy bias which children get explored first instead of pure visit-count-driven exploration. Off by default; requires overriding policy() to have any effect (the default uniform policy makes this behave like plain UCT, just with the term reshaped).
+    pub fn with_puct(mut self) -> Self {
+        self.use_puct = true;
+        self
+    }
+
     ///Seeds the internal random number generator from entropy. This is inteneded to produce non-deterministic search results.
     pub fn with_entropy(mut self) -> Self {
         use rand::SeedableRng;

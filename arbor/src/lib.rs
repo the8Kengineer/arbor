@@ -47,8 +47,13 @@ pub trait GameState<P: Player, A: Action>: Copy + Debug + Display {
     /// 
     ///Overriding this method allows for other ways of evaluating leaf nodes. The evaluation must provide an estimate of the win probability for the player of the current game state. The value returned should be a random variable between 0 and 1 that is correlated with the probablity the current player will win the game.
     /// 
-    /// Use the "with_custom_evaluation" method in the MCTS builder to enable this feature. 
+    /// Use the "with_custom_evaluation" method in the MCTS builder to enable this feature.
     fn custom_evaluation(&self) -> f32 {0.5}
+
+    ///Optional: Provide a prior weight (unnormalized is fine) for how promising `action` looks from the current state, before any search has happened - e.g. from a trained policy network. Higher means more promising. The default is uniform (every action equally likely), which is a no-op.
+    ///
+    ///Use the "with_puct" method in the MCTS builder to fold this into selection (AlphaZero-style PUCT, replacing the classic UCB1 exploration term with one weighted by this prior). Without with_puct, this method is never called.
+    fn policy(&self,_action: A) -> f32 {1.0}
 }
 
 #[derive(Debug)]
@@ -90,6 +95,7 @@ pub struct MCTS<P: Player, A: Action, S: GameState<P,A>> {
     use_custom_evaluation: bool,
     use_transposition: bool,
     use_rave: bool,
+    use_puct: bool,
 
     ///Provides metrics about the shape and size of the game tree. For informational purposes only.
     pub info: Info,

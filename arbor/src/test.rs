@@ -39,6 +39,8 @@ impl Action for Take {}
 pub struct Countdown {
     pub n: u32,
     pub side: Side,
+    ///When set, `policy()` strongly favors taking this many - only used by PUCT tests.
+    pub favored: Option<u32>,
 }
 
 impl Display for Countdown {
@@ -49,7 +51,13 @@ impl Display for Countdown {
 
 impl Countdown {
     pub fn new(n: u32) -> Self {
-        Countdown {n, side: Side::A}
+        Countdown {n, side: Side::A, favored: None}
+    }
+
+    ///Same as `new`, but `policy()` will strongly favor taking `favored` regardless of position -
+    ///only meaningful with `with_puct()` enabled; ignored otherwise.
+    pub fn with_policy_bias(n: u32,favored: u32) -> Self {
+        Countdown {n, side: Side::A, favored: Some(favored)}
     }
 
     ///The game-theoretically optimal outcome for the side to move: true if this is a losing
@@ -73,6 +81,7 @@ impl GameState<Side,Take> for Countdown {
         Countdown {
             n: self.n - action.0,
             side: self.side.other(),
+            favored: self.favored,
         }
     }
 
@@ -89,6 +98,13 @@ impl GameState<Side,Take> for Countdown {
 
     fn player(&self) -> Side {
         self.side
+    }
+
+    fn policy(&self,action: Take) -> f32 {
+        match self.favored {
+            Some(k) if action.0 == k => 100.0,
+            _ => 1.0,
+        }
     }
 }
 
@@ -644,6 +660,71 @@ fn rave_converges_at_least_as_reliably_as_vanilla_uct_on_a_tight_budget() {
     }
 
     assert!(rave_correct >= vanilla_correct,"expected RAVE to match or beat vanilla UCT's accuracy on a tight budget (rave={}/{}, vanilla={}/{})",rave_correct,seeds.len(),vanilla_correct,seeds.len());
+}
+
+#[test]
+fn puct_prefers_the_policy_favored_child_when_visit_stats_are_tied() {
+    //A high expansion minimum keeps the children as Leaf nodes through the extra visit below
+    //(the default of 0 would expand whichever one is selected, since any n > 0 already qualifies)
+    //- irrelevant to what's under test, just avoids an unrelated Leaf-vs-Branch complication.
+    let mut mcts = MCTS::new(Countdown::with_policy_bias(10,2)).with_puct().with_expansion_minimum(50);
+    mcts.ponder(1);
+
+    let c = match mcts.stack[0] {
+        Node::Branch(_,_,_,_,_,c) => c,
+        _ => panic!("expected root to be a branch after one iteration"),
+    };
+
+    //Force all three children to identical stats (tied average, tied visit count), so the
+    //classic UCB1 exploration term would also be exactly tied - isolating PUCT's policy-weighted
+    //term as the only thing that can break the tie.
+    mcts.stack[c] = Node::Leaf(true,Take(1),Side::B,5.0,10);
+    mcts.stack[c + 1] = Node::Leaf(true,Take(2),Side::B,5.0,10);
+    mcts.stack[c + 2] = Node::Leaf(false,Take(3),Side::B,5.0,10);
+    if let Node::Branch(s,a,p,w,_,cc) = mcts.stack[0] {
+        mcts.stack[0] = Node::Branch(s,a,p,w,30,cc);
+    }
+
+    mcts.ponder(1);
+
+    match (&mcts.stack[c],&mcts.stack[c + 1],&mcts.stack[c + 2]) {
+        (Node::Leaf(_,_,_,_,n1),Node::Leaf(_,_,_,_,n2),Node::Leaf(_,_,_,_,n3)) => {
+            assert_eq!(*n2,11,"the policy-favored child (Take(2)) should have received the additional visit");
+            assert_eq!(*n1,10);
+            assert_eq!(*n3,10);
+        },
+        other => panic!("expected all three children to remain Leaf nodes, got {:?}",other),
+    }
+}
+
+#[test]
+fn puct_converges_at_least_as_reliably_as_vanilla_uct_with_a_correct_bias() {
+    //n=13: taking 1 leaves the opponent at the forced-loss position n=12 (12 % 4 == 0) - the
+    //unique correct move. A policy that strongly favors it should let PUCT find it at least as
+    //reliably as uniform UCT on a tight budget, same comparison style as the RAVE test above.
+    let seeds: Vec<u64> = (0..40).collect();
+    let budget = 150;
+
+    let mut vanilla_correct = 0;
+    let mut puct_correct = 0;
+
+    for &seed in &seeds {
+        let mut vanilla = MCTS::new(Countdown::new(13));
+        vanilla.rand = Rng::from_seed(seed_from_u64(seed));
+        vanilla.ponder(budget);
+        if vanilla.best() == Some(Take(1)) {
+            vanilla_correct += 1;
+        }
+
+        let mut puct = MCTS::new(Countdown::with_policy_bias(13,1)).with_puct();
+        puct.rand = Rng::from_seed(seed_from_u64(seed));
+        puct.ponder(budget);
+        if puct.best() == Some(Take(1)) {
+            puct_correct += 1;
+        }
+    }
+
+    assert!(puct_correct >= vanilla_correct,"expected PUCT with a strong correct-move bias to match or beat uniform UCT's accuracy on a tight budget (puct={}/{}, vanilla={}/{})",puct_correct,seeds.len(),vanilla_correct,seeds.len());
 }
 
 #[test]
