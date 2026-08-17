@@ -11,8 +11,10 @@ use serde::Serialize;
 type HashMap<K,V> = rustc_hash::FxHashMap<K,V>;
 type Rng = rand_xorshift::XorShiftRng;
 
-///This trait describes an allowed move for a game state. This type is passed to the "make" function to produce the next game state. The algorithm keeps track of all allowed actions for each game state that is visited. Limit the size of this type and prefer a contiguous memory layout for best performance (e.g. enum, integer). 
-pub trait Action: Copy + Clone + Debug {}
+///This trait describes an allowed move for a game state. This type is passed to the "make" function to produce the next game state. The algorithm keeps track of all allowed actions for each game state that is visited. Limit the size of this type and prefer a contiguous memory layout for best performance (e.g. enum, integer).
+///
+///PartialEq is required so a search tree can be searched for a specific action (e.g. MCTS::advance, matching the action just played against the tree's own children).
+pub trait Action: Copy + Clone + Debug + PartialEq {}
 
 ///This trait describes the players in the game. For now it should be a two-state like a boolean.
 pub trait Player: Copy + Clone + Debug + PartialEq {}

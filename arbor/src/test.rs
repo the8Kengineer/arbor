@@ -377,6 +377,108 @@ fn solver_proves_a_forced_win_via_a_single_winning_child() {
     assert_eq!(mcts.best(),Some(Take(1)));
 }
 
+fn find_child_n(stack: &[Node<Side,Take>],c: usize,target: Take) -> Option<u32> {
+    let mut sibling = Some(c);
+    while let Some(u) = sibling {
+        let (matches,n,has_sibling) = match stack[u] {
+            Node::Leaf(s,a,_,_,n) => (a == target,Some(n),s),
+            Node::Branch(s,a,_,_,n,_) => (a == target,Some(n),s),
+            Node::Terminal(s,a,_,_) => (a == target,None,s),
+            Node::Unknown(s,a) => (a == target,None,s),
+            Node::Transpose(s,a,_) => (a == target,None,s),
+        };
+        if matches {
+            return n;
+        }
+        sibling = has_sibling.then(||u+1);
+    }
+    None
+}
+
+#[test]
+fn advance_reuses_the_explored_subtree_instead_of_discarding_it() {
+    //n=30 without transposition: distinct move sequences reaching the same remaining count are
+    //still distinct tree paths, so the full tree is far too large to solve within 20000
+    //iterations - unlike the smaller positions used elsewhere in this file, this reliably stays
+    //a partially-explored Branch, which is what this test needs to check reuse specifically
+    //(a fully-solved root is covered by the dedicated advance-into-a-solved-child test below).
+    let mut mcts = MCTS::new(Countdown::new(30));
+    mcts.ponder(20000);
+
+    let best_move = mcts.best().expect("should have a best move");
+    let c = match mcts.stack[0] {
+        Node::Branch(_,_,_,_,_,c) => c,
+        _ => panic!("expected root to still be a branch (not fully solved) after 20000 iterations"),
+    };
+    let child_n = find_child_n(&mcts.stack,c,best_move)
+        .expect("the chosen best move should be an already-visited (Leaf/Branch) child");
+
+    let mcts = mcts.advance(best_move);
+
+    assert_eq!(mcts.info.n,child_n,"advance() should carry over the chosen child's visit count as the new root's, not discard the work");
+    match &mcts.stack[0] {
+        Node::Branch(_,_,_,_,n,_) => assert_eq!(*n,child_n),
+        other => panic!("expected the relocated root to be a Branch, got {:?}",other),
+    }
+}
+
+#[test]
+fn advance_then_further_search_still_finds_the_correct_move() {
+    //From n=10, taking 2 leaves the opponent at n=8 (a losing position, 8 % 4 == 0) - the
+    //correct move. Advance into it and confirm search from the new position (n=8, opponent's
+    //turn) correctly finds every reply loses similarly, i.e. the reused tree isn't corrupted and
+    //remains searchable.
+    let mut mcts = MCTS::new(Countdown::new(10));
+    mcts.ponder(20000);
+    assert_eq!(mcts.best(),Some(Take(2)));
+
+    let mut mcts = mcts.advance(Take(2));
+    assert_eq!(mcts.root.n,8);
+    assert_eq!(mcts.root.side,Side::B);
+
+    mcts.ponder(20000);
+    //n=8 is a losing position for whoever moves - every reply should be a proven loss, so the
+    //game should end up fully solved (root becomes Terminal) exactly like the standalone solver
+    //test for a forced-loss position.
+    match &mcts.stack[0] {
+        Node::Terminal(_,_,player,w) => {
+            assert_eq!(*player,Side::B);
+            assert_eq!(*w,0.0);
+        },
+        other => panic!("expected the advanced position to fully solve as a forced loss, got {:?}",other),
+    }
+}
+
+#[test]
+fn advance_without_prior_search_does_not_panic() {
+    let mcts = MCTS::new(Countdown::new(10));
+    let mut mcts = mcts.advance(Take(2));
+    assert_eq!(mcts.root.n,8);
+    mcts.ponder(1000);
+    assert!(mcts.best().is_some());
+}
+
+#[test]
+fn advance_into_an_already_solved_child_recovers_instead_of_getting_stuck() {
+    //n=5 is a forced win via Take(1) (leaving the opponent at the forced-loss position n=4).
+    //Advancing into the *losing* replies (Take(2) or Take(3)) lands on a child that solving may
+    //have already proven a loss for Side::B without ever expanding its own children - advance()
+    //must not keep a bare, childless Terminal as the new root (see its doc comment), or the
+    //instance would be permanently stuck: ponder() only re-bootstraps an empty stack, so a lone
+    //stale Terminal would silently stop all further search forever.
+    let mut mcts = MCTS::new(Countdown::new(5));
+    mcts.ponder(20000);
+    assert_eq!(mcts.best(),Some(Take(1)),"sanity check: Take(1) is the unique winning move");
+
+    let mut mcts = mcts.advance(Take(3));
+    assert_eq!(mcts.root.n,2);
+    assert_eq!(mcts.root.side,Side::B);
+
+    mcts.ponder(1000);
+    assert!(mcts.info.n > 0,"search must still make real progress after advancing into a previously-solved child");
+    assert_eq!(mcts.best(),Some(Take(2)),"n=2 is a forced win for Side::B via Take(2) (leaving n=0)");
+}
+
 #[test]
 fn ponder_zero_after_real_search_is_still_a_noop() {
     let mut mcts = MCTS::new(Countdown::new(10));

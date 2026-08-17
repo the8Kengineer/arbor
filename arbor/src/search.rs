@@ -1,6 +1,7 @@
 use super::*;
 use rand::SeedableRng;
 use rand::RngCore;
+use std::collections::VecDeque;
 
 impl GameResult {
     #[inline]
@@ -174,7 +175,136 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
             self.info.bytes = self.stack.len() * std::mem::size_of::<Node<P,A>>();
         }
     }
-    
+
+    ///Advance the search onto the state that results from playing `action` at the root, reusing
+    ///whatever was already explored under that specific move instead of discarding the whole
+    ///tree the way constructing a fresh `MCTS::new()` after every real move would. This is
+    ///normally the biggest wasted-work opportunity across a full game: the child of the move
+    ///actually played is, by construction, the most-explored part of the entire tree.
+    ///
+    ///Search configuration (exploration constant, expansion minimum, custom evaluation,
+    ///transposition, and RNG state) carries over unchanged. If there's nothing worth reusing -
+    ///`ponder` was never called, `action` wasn't among the root's children, or that child was
+    ///never actually explored (still `Unknown`) or was already solved to a bare `Terminal`
+    ///(which no longer carries a pointer to its own children to reuse, and must not be kept as
+    ///the new root regardless - see the comment inline) - this behaves like starting fresh from
+    ///the resulting state.
+    pub fn advance(mut self, action: A) -> Self {
+        let reusable = match self.stack.get(0) {
+            Some(&Node::Branch(_,_,_,_,_,c)) => {
+                let mut sibling = Some(c);
+                let mut found = None;
+                while let Some(u) = sibling {
+                    let (matches,has_sibling) = match self.stack[u] {
+                        Node::Unknown(s,a) => (a == action,s),
+                        Node::Terminal(s,a,_,_) => (a == action,s),
+                        Node::Leaf(s,a,_,_,_) => (a == action,s),
+                        Node::Branch(s,a,_,_,_,_) => (a == action,s),
+                        Node::Transpose(s,a,_) => (a == action,s),
+                    };
+                    if matches {
+                        found = Some(u);
+                        break;
+                    }
+                    sibling = has_sibling.then(||u+1);
+                }
+                //Only a Branch is worth relocating as the new root. A Terminal specifically must
+                //not be kept: its `a` field means "how my old parent reached me", not "the best
+                //move from here" (only index 0 ever gets that meaning rewritten, in go()'s
+                //solver step) - and since ponder() only ever re-bootstraps an *empty* stack,
+                //keeping a lone stale Terminal as root would permanently stop all further search
+                //while best() kept reporting a meaningless action forever.
+                found.filter(|&u| matches!(self.stack[u],Node::Branch(_,_,_,_,_,_)))
+            },
+            _ => None,
+        };
+
+        self.root = self.root.make(action);
+
+        match reusable {
+            Some(old_root) => self.relocate(old_root),
+            None => {
+                self.stack.clear();
+                self.map.clear();
+                self.info = Info::default();
+            }
+        }
+
+        self
+    }
+
+    ///Compact the subtree rooted at `old_root` (an index into the *current* self.stack) into a
+    ///fresh Vec starting at index 0, discarding everything else, and remapping every internal
+    ///index (a Branch's child-start `c`) from old to new. Nodes are copied in level order via a
+    ///queue that enqueues each Branch's *entire* sibling run atomically, which keeps every
+    ///Branch's children contiguous in the new Vec too - required, since sibling traversal
+    ///elsewhere just walks `index + 1` rather than following an explicit next-pointer.
+    ///
+    ///Transpose nodes are not followed (their target may not even be part of this subtree - it
+    ///could point at a sibling's subtree being discarded, or an ancestor) and are conservatively
+    ///reset to Unknown instead: the position gets re-explored and, if applicable, re-transposed
+    ///next time it's reached, rather than risking a dangling or contiguity-violating reference.
+    fn relocate(&mut self,old_root: usize) {
+        let mut order: Vec<usize> = vec![old_root];
+        let mut old_to_new: HashMap<usize,usize> = HashMap::default();
+        old_to_new.insert(old_root,0);
+
+        let mut queue: VecDeque<usize> = VecDeque::new();
+        queue.push_back(old_root);
+
+        while let Some(old_index) = queue.pop_front() {
+            if let Node::Branch(_,_,_,_,_,c) = self.stack[old_index] {
+                let mut sibling = Some(c);
+                while let Some(u) = sibling {
+                    let new_index = order.len();
+                    old_to_new.insert(u,new_index);
+                    order.push(u);
+                    queue.push_back(u);
+                    sibling = self.sibling_flag(u).then(||u+1);
+                }
+            }
+        }
+
+        let mut new_stack: Vec<Node<P,A>> = Vec::with_capacity(order.len());
+        let mut new_info = Info::default();
+
+        for &old_index in &order {
+            let node = match self.stack[old_index] {
+                Node::Unknown(s,a) => {
+                    new_info.unknown += 1;
+                    Node::Unknown(s,a)
+                },
+                Node::Terminal(s,a,p,w) => {
+                    new_info.terminal += 1;
+                    Node::Terminal(s,a,p,w)
+                },
+                Node::Leaf(s,a,p,w,n) => {
+                    new_info.leaf += 1;
+                    Node::Leaf(s,a,p,w,n)
+                },
+                Node::Branch(s,a,p,w,n,c) => {
+                    new_info.branch += 1;
+                    Node::Branch(s,a,p,w,n,old_to_new[&c])
+                },
+                Node::Transpose(s,a,_) => {
+                    new_info.unknown += 1;
+                    Node::Unknown(s,a)
+                },
+            };
+            new_stack.push(node);
+        }
+
+        new_info.bytes = new_stack.len() * std::mem::size_of::<Node<P,A>>();
+        if let Node::Branch(_,_,_,w,n,_) = new_stack[0] {
+            new_info.n = n;
+            new_info.q = (w/(n as f64)) as f32;
+        }
+
+        self.stack = new_stack;
+        self.map.clear();
+        self.info = new_info;
+    }
+
     fn sibling_flag(&self,index: usize) -> bool {
         match self.stack[index] {
             Node::Unknown(s,_) => s,
