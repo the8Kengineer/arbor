@@ -183,6 +183,55 @@ fn ponder_on_gameover_root_is_repeatable() {
 }
 
 #[test]
+fn best_prefers_visit_count_over_lucky_average() {
+    //Bootstrap a root with 3 real children (Take(1), Take(2), Take(3)) via a single iteration,
+    //then hand-craft their statistics to isolate the exact selection mechanism: Take(1) looks
+    //*better* by raw average (a single lucky rollout) but is barely explored; Take(2) has a
+    //lower average but is thoroughly explored. Whether best() picks the well-explored move over
+    //the lucky-but-unreliable one is exactly the behavior under test - unreachable by only
+    //asserting the final move is "good", since with enough iterations both old and new
+    //selection converge to the same answer anyway.
+    let mut mcts = MCTS::new(Countdown::new(10));
+    mcts.ponder(1);
+
+    match mcts.stack[0] {
+        Node::Branch(_,_,player,_,_,_) => assert_eq!(player,Side::A),
+        _ => panic!("expected root to be a branch after one iteration"),
+    }
+
+    //Node fields are (has_sibling, action, player, value-sum, visits[, child]). Values are
+    //stored from the child's own player's perspective (Side::B here), so a move that *looks*
+    //strong for the root (Side::A) needs a *low* stored average.
+    mcts.stack[1] = Node::Leaf(true,Take(1),Side::B,0.05,1);   // root-perspective avg 0.95, n=1
+    mcts.stack[2] = Node::Leaf(true,Take(2),Side::B,20.0,50);  // root-perspective avg 0.60, n=50
+    mcts.stack[3] = Node::Leaf(false,Take(3),Side::B,25.0,50); // root-perspective avg 0.50, n=50
+
+    assert_eq!(mcts.best(),Some(Take(2)),"the well-explored move should win over the lucky, barely-visited one");
+}
+
+#[test]
+fn best_prefers_proven_win_over_a_much_better_explored_uncertain_move() {
+    let mut mcts = MCTS::new(Countdown::new(10));
+    mcts.ponder(1);
+
+    mcts.stack[1] = Node::Terminal(true,Take(1),Side::B,0.0);   // proven win for the root (Side::A)
+    mcts.stack[2] = Node::Leaf(true,Take(2),Side::B,5.0,50);    // root-perspective avg 0.90, n=50
+    mcts.stack[3] = Node::Leaf(false,Take(3),Side::B,25.0,50);  // root-perspective avg 0.50, n=50
+
+    assert_eq!(mcts.best(),Some(Take(1)),"a proven win must be chosen over any merely-probable move");
+}
+
+#[test]
+fn best_converges_to_the_game_theoretically_correct_move() {
+    //n=6: taking 2 leaves the opponent at n=4, a losing position for them (4 % 4 == 0) - the
+    //unique correct move. An end-to-end convergence check, complementing the two precise tests
+    //above.
+    let mut mcts = MCTS::new(Countdown::new(6));
+    mcts.ponder(20000);
+    assert_eq!(mcts.best(),Some(Take(2)));
+}
+
+#[test]
 fn ponder_zero_after_real_search_is_still_a_noop() {
     let mut mcts = MCTS::new(Countdown::new(10));
     mcts.ponder(50);

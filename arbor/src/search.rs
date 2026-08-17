@@ -32,18 +32,60 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
     }
 
     ///Pick the best move after some time spent pondering. Returns None if ponder has not yet been called, or if the root game state is already a game-over position.
+    ///
+    ///Selection prefers a proven win (a child that has been solved as a certain win) first; otherwise it prefers the most-visited child ("robust child"), using average value only as a tiebreaker. Visit count is a far more reliable indicator than raw average value, which a lightly-visited child can reach purely by a lucky early rollout.
     pub fn best(&self) -> Option<A> {
-        let mut best = None;
-        let mut max = -0.1;
-        
-        self.ply(&mut |(a,w,_s)| {
-            if max < w {
-                max = w;
-                best = Some(a);
+        if self.stack.len() == 0 {
+            return None;
+        }
+
+        let (player,c) = match self.stack[0] {
+            Node::Branch(_,_,player,_,_,c) => (player,c),
+            _ => return None,
+        };
+
+        let mut best: Option<A> = None;
+        let mut best_won = false;
+        let mut best_n: u32 = 0;
+        let mut best_avg: f32 = -1.0;
+
+        let mut sibling = Some(c);
+        while let Some(u) = sibling {
+            let (s,candidate,won,n,avg) = match self.stack[u] {
+                Node::Terminal(s,a,p,w) => {
+                    let w = if p == player {w} else {1.0 - w};
+                    (s,a,w >= 1.0,u32::MAX,w)
+                },
+                Node::Leaf(s,a,p,w,n) |
+                Node::Branch(s,a,p,w,n,_) => {
+                    let avg = w/(n as f32);
+                    let avg = if p == player {avg} else {1.0 - avg};
+                    (s,a,false,n,avg)
+                },
+                Node::Unknown(s,a) => (s,a,false,0,0.5),
+                Node::Transpose(_,_,_) =>
+                    panic!("Transpositions should not be possible at root ply"),
+            };
+
+            let better = if won && !best_won {
+                true
+            } else if won == best_won {
+                n > best_n || (n == best_n && avg > best_avg)
+            } else {
+                false
+            };
+
+            if best.is_none() || better {
+                best = Some(candidate);
+                best_won = won;
+                best_n = n;
+                best_avg = avg;
             }
-        });
-        
-        return best;
+
+            sibling = s.then(||u+1);
+        }
+
+        best
     }
 
     ///Iterate through the actions in the first ply. The callback f is called for each action in the first ply with a tuple of (a, w, s) where a is the action, w is the expected value of the action, and s is the confidence in the value of the action. s is similar to standard deviation where closer to zero is more confident.
