@@ -31,7 +31,7 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
         }
     }
 
-    ///Pick the best move after some time spent pondering. Returns None if ponder has not yet been called.
+    ///Pick the best move after some time spent pondering. Returns None if ponder has not yet been called, or if the root game state is already a game-over position.
     pub fn best(&self) -> Option<A> {
         let mut best = None;
         let mut max = -0.1;
@@ -90,10 +90,17 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
         }
 
         if self.stack.len() == 0 {
+            if self.root.gameover().is_some() {
+                //Nothing to search from an already-decided position. Leave the stack empty so
+                //ply()/best() report "no move" the same way they do before ponder() is ever
+                //called, rather than panicking trying to bootstrap a root with no actions.
+                return;
+            }
+
             let mut actions = Vec::new();
             self.root.actions(&mut |a| actions.push(a));
-            
-            
+
+
             self.stack.push(Node::Leaf(
                 false,
                 // This action is never used, so it doesn't matter what it is

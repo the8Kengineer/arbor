@@ -166,6 +166,23 @@ fn rollout_panics_clearly_on_zero_actions_state() {
 }
 
 #[test]
+fn ponder_on_gameover_root_does_not_panic() {
+    let mut mcts = MCTS::new(Countdown::new(0));
+    mcts.ponder(10);
+    assert!(mcts.best().is_none(),"there is no move to make from an already-decided position");
+}
+
+#[test]
+fn ponder_on_gameover_root_is_repeatable() {
+    //Calling ponder() again on an already-decided root should keep returning cleanly, not just
+    //on the very first call.
+    let mut mcts = MCTS::new(Countdown::new(0));
+    mcts.ponder(1);
+    mcts.ponder(100);
+    assert!(mcts.best().is_none());
+}
+
+#[test]
 fn ponder_zero_after_real_search_is_still_a_noop() {
     let mut mcts = MCTS::new(Countdown::new(10));
     mcts.ponder(50);
