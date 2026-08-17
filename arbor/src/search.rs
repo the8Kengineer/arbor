@@ -33,7 +33,9 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
 
     ///Pick the best move after some time spent pondering. Returns None if ponder has not yet been called, or if the root game state is already a game-over position.
     ///
-    ///Selection prefers a proven win (a child that has been solved as a certain win) first; otherwise it prefers the most-visited child ("robust child"), using average value only as a tiebreaker. Visit count is a far more reliable indicator than raw average value, which a lightly-visited child can reach purely by a lucky early rollout.
+    ///Selection ranks candidates into four tiers, highest first: a proven win, a proven draw (or other non-extreme proven value), an unresolved child, then a proven loss. Within the unresolved tier, the most-visited child ("robust child") is preferred, using average value only as a tiebreaker - visit count is a far more reliable indicator than raw average value, which a lightly-visited child can reach purely by a lucky early rollout. Proven values, by construction, are never that lucky, which is also why a proven loss still ranks below every unresolved child instead of being treated as simply "the worst average": an unresolved child might turn out fine, a proven loss provably won't.
+    ///
+    ///If the search fully solves the position (see MCTS-Solver in go()), the root itself becomes Terminal and this returns the move that was proven best, same as always.
     pub fn best(&self) -> Option<A> {
         if self.stack.len() == 0 {
             return None;
@@ -41,43 +43,45 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
 
         let (player,c) = match self.stack[0] {
             Node::Branch(_,_,player,_,_,c) => (player,c),
+            Node::Terminal(_,a,_,_) => return Some(a),
             _ => return None,
         };
 
         let mut best: Option<A> = None;
-        let mut best_won = false;
+        let mut best_tier: u8 = 0;
         let mut best_n: u32 = 0;
         let mut best_avg: f32 = -1.0;
 
         let mut sibling = Some(c);
         while let Some(u) = sibling {
-            let (s,candidate,won,n,avg) = match self.stack[u] {
+            let (s,candidate,tier,n,avg) = match self.stack[u] {
                 Node::Terminal(s,a,p,w) => {
                     let w = if p == player {w} else {1.0 - w};
-                    (s,a,w >= 1.0,u32::MAX,w)
+                    let tier = if w >= 1.0 {3} else if w <= 0.0 {0} else {2};
+                    (s,a,tier,0,w)
                 },
                 Node::Leaf(s,a,p,w,n) |
                 Node::Branch(s,a,p,w,n,_) => {
                     let avg = (w/(n as f64)) as f32;
                     let avg = if p == player {avg} else {1.0 - avg};
-                    (s,a,false,n,avg)
+                    (s,a,1u8,n,avg)
                 },
-                Node::Unknown(s,a) => (s,a,false,0,0.5),
+                Node::Unknown(s,a) => (s,a,1u8,0,0.5),
                 Node::Transpose(_,_,_) =>
                     panic!("Transpositions should not be possible at root ply"),
             };
 
-            let better = if won && !best_won {
-                true
-            } else if won == best_won {
+            let better = if tier != best_tier {
+                tier > best_tier
+            } else if tier == 1 {
                 n > best_n || (n == best_n && avg > best_avg)
             } else {
-                false
+                avg > best_avg
             };
 
             if best.is_none() || better {
                 best = Some(candidate);
-                best_won = won;
+                best_tier = tier;
                 best_n = n;
                 best_avg = avg;
             }
@@ -171,6 +175,51 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
         }
     }
     
+    fn sibling_flag(&self,index: usize) -> bool {
+        match self.stack[index] {
+            Node::Unknown(s,_) => s,
+            Node::Terminal(s,_,_,_) => s,
+            Node::Leaf(s,_,_,_,_) => s,
+            Node::Branch(s,_,_,_,_,_) => s,
+            Node::Transpose(s,_,_) => s,
+        }
+    }
+
+    ///MCTS-Solver: check whether a branch's siblings (starting at `c`) now prove the branch's
+    ///own value, from `player`'s (the branch's own mover's) perspective. A single proven win is
+    ///enough (an "OR" node - the mover just takes it), so that short-circuits immediately even
+    ///if other children are still unresolved. A proven loss requires every child to already be
+    ///a proven loss - if even one sibling isn't yet a proven Terminal, nothing can be concluded,
+    ///since that sibling could still turn out to be the winning move.
+    ///
+    ///Transpose siblings are conservatively treated as unresolved rather than following the
+    ///pointer to check the transposed target, since transposition is already documented as
+    ///experimental; this can delay a solve but never produces an incorrect one.
+    fn solved_value(&self,c: usize,player: P) -> Option<f32> {
+        let mut sibling = Some(c);
+        let mut all_are_losses = true;
+
+        while let Some(u) = sibling {
+            match self.stack[u] {
+                Node::Terminal(_,_,p,w) => {
+                    let w = if p == player {w} else {1.0 - w};
+                    if w >= 1.0 {
+                        return Some(1.0);
+                    }
+                    if w > 0.0 {
+                        all_are_losses = false;
+                    }
+                },
+                _ => {
+                    all_are_losses = false;
+                }
+            }
+            sibling = self.sibling_flag(u).then(||u+1);
+        }
+
+        if all_are_losses {Some(0.0)} else {None}
+    }
+
     fn uct(&self,index: usize, player: P, nt: u32) -> (bool,A,f32) {
         
         match self.stack[index] {
@@ -295,12 +344,35 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                 let n = n + 1;
                 self.stack[index] = Node::Branch(s,a,player,w,n,c);
 
+                //MCTS-Solver: the child just visited may have resolved this branch's own value
+                //for certain (see solved_value's doc comment). Once solved, short-circuit to
+                //Terminal so future visits here - and, via this same return value, the parent's
+                //own solved_value check - see the proven value instead of spending further
+                //iterations "reconfirming" statistically what's already known for certain.
+                let solved = self.solved_value(c,player);
+                let result = match solved {
+                    Some(value) => {
+                        //`a` here is this node's own "how did my parent reach me" label - load-
+                        //bearing for every node except the root, which has no parent to report
+                        //it to (its `a` has only ever been an unused placeholder). Repurpose it
+                        //at the root specifically to remember the winning/only move, so best()
+                        //can still report it once the whole search is solved and this Branch's
+                        //child pointer - the only other place that move was recorded - is gone.
+                        let remembered_action = if index == 0 {action} else {a};
+                        self.stack[index] = Node::Terminal(s,remembered_action,player,value);
+                        self.info.branch -= 1;
+                        self.info.terminal += 1;
+                        value
+                    },
+                    None => v,
+                };
+
                 if index == 0 {
-                    self.info.q = (w/(n as f64)) as f32;
                     self.info.n = n;
+                    self.info.q = solved.unwrap_or_else(|| (w/(n as f64)) as f32);
                 }
-                
-                v
+
+                result
             },
             Node::Leaf(s,a,p,w,n) => {
                 if n > self.expansion {

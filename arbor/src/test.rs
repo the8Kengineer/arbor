@@ -222,6 +222,25 @@ fn best_prefers_proven_win_over_a_much_better_explored_uncertain_move() {
 }
 
 #[test]
+fn best_prefers_any_unresolved_move_over_a_proven_loss() {
+    //A proven loss must rank below an unresolved move, however mediocre that move's average
+    //looks so far - it might still turn out fine, whereas the proven loss provably won't. This
+    //regression-tests a real bug: an earlier version of best() gave every Terminal node (loss
+    //included) a "treat as infinite visit count" sentinel meant only for proven wins, which let
+    //a proven loss's exact value (0.0) beat a perfectly reasonable but merely-average
+    //unresolved move on the visit-count comparison, in effect always steering into a known loss
+    //whenever one was available among the candidates.
+    let mut mcts = MCTS::new(Countdown::new(10));
+    mcts.ponder(1);
+
+    mcts.stack[1] = Node::Terminal(true,Take(1),Side::B,1.0);  // proven loss for the root (Side::A)
+    mcts.stack[2] = Node::Leaf(true,Take(2),Side::B,20.0,50);  // root-perspective avg 0.60, n=50
+    mcts.stack[3] = Node::Leaf(false,Take(3),Side::B,49.0,50); // root-perspective avg 0.02, n=50
+
+    assert_eq!(mcts.best(),Some(Take(2)),"any unresolved move should be preferred over a proven loss");
+}
+
+#[test]
 fn best_converges_to_the_game_theoretically_correct_move() {
     //n=6: taking 2 leaves the opponent at n=4, a losing position for them (4 % 4 == 0) - the
     //unique correct move. An end-to-end convergence check, complementing the two precise tests
@@ -311,6 +330,51 @@ fn leaf_value_sum_stores_high_visit_counts_without_losing_precision() {
     let (_,avg) = reported.into_iter().find(|(a,_)| *a == Take(1)).expect("Take(1) should be reported");
 
     assert!((avg - 0.5).abs() < 1e-6,"expected the average to remain exactly 0.5, got {}",avg);
+}
+
+#[test]
+fn solver_proves_a_forced_loss_and_stops_further_work() {
+    //n=4 is a losing position for the side to move (4 % 4 == 0): every reply (take 1, 2, or 3)
+    //leaves the opponent at n=3, n=2, or n=1 - all winning positions for them. A tiny, shallow
+    //game tree, well within reach of full solving.
+    let mut mcts = MCTS::new(Countdown::new(4));
+    mcts.ponder(5000);
+
+    match mcts.stack[0] {
+        Node::Terminal(_,_,player,w) => {
+            assert_eq!(player,Side::A);
+            assert_eq!(w,0.0,"a forced loss should be proven with certainty (0.0), not just estimated");
+        },
+        _ => panic!("expected the root to be fully solved as Terminal after 5000 iterations of a 3-ply-deep forced loss"),
+    }
+
+    let n_before = mcts.info.n;
+    mcts.ponder(1000);
+    assert_eq!(mcts.info.n,n_before,"once solved, further ponder() calls should do no additional work");
+
+    //Every move loses equally, but best() must still recommend one - solving shouldn't leave
+    //the caller with no legal move to actually play.
+    assert!(mcts.best().is_some());
+}
+
+#[test]
+fn solver_proves_a_forced_win_via_a_single_winning_child() {
+    //n=5: taking 1 leaves the opponent at the forced-loss position n=4 - the unique winning
+    //reply. Confirms the "OR node" half of the solver: one proven-winning child is enough to
+    //solve the branch, without needing every other child resolved too.
+    let mut mcts = MCTS::new(Countdown::new(5));
+    mcts.ponder(20000);
+
+    match mcts.stack[0] {
+        Node::Terminal(_,a,player,w) => {
+            assert_eq!(player,Side::A);
+            assert_eq!(w,1.0,"a forced win should be proven with certainty (1.0)");
+            assert_eq!(a,Take(1),"the remembered move should be the actual winning one");
+        },
+        _ => panic!("expected the root to be fully solved as Terminal after 20000 iterations"),
+    }
+
+    assert_eq!(mcts.best(),Some(Take(1)));
 }
 
 #[test]
