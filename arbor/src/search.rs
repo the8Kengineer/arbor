@@ -239,8 +239,14 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                         self.stack.push(Node::Unknown(true,a));
                         self.info.unknown += 1;
                     });
-                    
-                    
+
+                    assert!(
+                        self.stack.len() > c,
+                        "GameState::actions() yielded zero actions for a state with gameover() == None ({:?}). \
+                         Every non-terminal state must offer at least one legal action.",
+                        state
+                    );
+
                     if let Some(Node::Unknown(_,a)) = self.stack.pop() {
                         self.stack.push(Node::Unknown(false,a));
                     }

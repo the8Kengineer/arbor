@@ -144,6 +144,18 @@ fn ponder_zero_on_fresh_mcts_is_a_noop() {
 }
 
 #[test]
+#[should_panic(expected = "zero actions")]
+fn expansion_panics_clearly_on_zero_actions_state() {
+    //With custom_evaluation enabled, the first visit to a Leaf never calls actions() (it calls
+    //custom_evaluation() instead), so Broken's depth==1 state survives its first visit
+    //undetected and only gets its actions() called when the *second* visit triggers expansion -
+    //isolating this regression test to the expansion code path specifically, rather than
+    //rollout's (see the next test).
+    let mut mcts = MCTS::new(Broken::new()).with_custom_evaluation();
+    mcts.ponder(2);
+}
+
+#[test]
 fn ponder_zero_after_real_search_is_still_a_noop() {
     let mut mcts = MCTS::new(Countdown::new(10));
     mcts.ponder(50);
