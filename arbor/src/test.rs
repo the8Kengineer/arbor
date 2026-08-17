@@ -261,6 +261,59 @@ fn uct_ties_are_broken_randomly_not_always_first_sibling() {
 }
 
 #[test]
+fn f64_accumulation_resists_the_drift_f32_would_suffer_at_high_visit_counts() {
+    //A running value-sum accumulated as f32 has only ~7 significant decimal digits; summing a
+    //value that isn't exactly representable (like 1/3) millions of times compounds rounding
+    //error at every single addition. f64's error per step is around 9 orders of magnitude
+    //smaller, so the same number of additions leaves it comparatively exact. This is the
+    //general mathematical fact motivating widening Node::Leaf/Branch's `w` field to f64 (see
+    //arbor/src/lib.rs) - demonstrated directly here rather than by driving an actual multi-
+    //million-iteration search, which would make this test slow without testing anything more
+    //specific than the arithmetic itself.
+    let iterations: u32 = 5_000_000;
+    let increment = 1.0/3.0;
+
+    let mut sum32: f32 = 0.0;
+    let mut sum64: f64 = 0.0;
+    for _ in 0..iterations {
+        sum32 += increment as f32;
+        sum64 += increment;
+    }
+
+    let expected = iterations as f64 * increment;
+    let err32 = (sum32 as f64 - expected).abs();
+    let err64 = (sum64 - expected).abs();
+
+    assert!(err64 < 1.0,"f64 accumulation error should stay tiny at {} iterations, got {}",iterations,err64);
+    assert!(err32 > err64 * 1000.0,"expected f32 accumulation to drift dramatically more than f64 at {} iterations (f32 err={}, f64 err={})",iterations,err32,err64);
+}
+
+#[test]
+fn leaf_value_sum_stores_high_visit_counts_without_losing_precision() {
+    //16_777_217.0 is the smallest positive integer f32 cannot represent (2^24 + 1) - a sum an
+    //f32 accumulator could plausibly reach at a heavily-visited node (e.g. the root) over a
+    //long-running search. Confirm the tree actually stores and reports it exactly.
+    let n: u32 = 16_777_217 * 2;
+    let w: f64 = 16_777_217.0;
+
+    let mut mcts = MCTS::new(Countdown::new(10));
+    mcts.ponder(1);
+    let c = match mcts.stack[0] {
+        Node::Branch(_,_,_,_,_,c) => c,
+        _ => panic!("expected root to be a branch after one iteration"),
+    };
+    //Overwrite whichever child was explored first with a synthetic, precision-sensitive value;
+    //Side::B is the mover at any child of a Side::A root, matching what a real search would use.
+    mcts.stack[c] = Node::Leaf(false,Take(1),Side::B,w,n);
+
+    let mut reported = Vec::new();
+    mcts.ply(&mut |(a,avg,_e)| reported.push((a,avg)));
+    let (_,avg) = reported.into_iter().find(|(a,_)| *a == Take(1)).expect("Take(1) should be reported");
+
+    assert!((avg - 0.5).abs() < 1e-6,"expected the average to remain exactly 0.5, got {}",avg);
+}
+
+#[test]
 fn ponder_zero_after_real_search_is_still_a_noop() {
     let mut mcts = MCTS::new(Countdown::new(10));
     mcts.ponder(50);

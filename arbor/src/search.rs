@@ -58,7 +58,7 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                 },
                 Node::Leaf(s,a,p,w,n) |
                 Node::Branch(s,a,p,w,n,_) => {
-                    let avg = w/(n as f32);
+                    let avg = (w/(n as f64)) as f32;
                     let avg = if p == player {avg} else {1.0 - avg};
                     (s,a,false,n,avg)
                 },
@@ -100,11 +100,11 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                 match self.stack[u] {
                     Node::Leaf(s,a,p,w,n) |
                     Node::Branch(s,a,p,w,n,_) => {
-                        let n = n as f32;
-                        let w = w/n;
+                        let nf = n as f64;
+                        let w = w/nf;
                         let w = if p == player {w} else {1.0 - w};
-                        let e = 0.5/n + (w*(1.0 - w)/n).sqrt();
-                        f((a,w,e));
+                        let e = (0.5/nf + (w*(1.0 - w)/nf).sqrt()) as f32;
+                        f((a,w as f32,e));
                         sibling = s.then(||u+1);
                     },
                     Node::Terminal(s,a,p,w) => {
@@ -183,11 +183,13 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
             },
             Node::Leaf(s,a,p,w,n) |
             Node::Branch(s,a,p,w,n,_) => {
+                let nf = n as f64;
+                let w = if p == player {w} else {nf - w};
+                let avg = (w/nf) as f32;
                 let n = n as f32;
                 let nt = nt as f32;
-                let w = if p == player {w} else {n - w};
                 let c = self.exploration;
-                let val = w/n + c*(nt.ln()/n).sqrt();
+                let val = avg + c*(nt.ln()/n).sqrt();
                 (s,a,val)
             },
             Node::Transpose(s,a,u) => {
@@ -202,11 +204,13 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                     },
                     Node::Leaf(_,_,p,w,n) |
                     Node::Branch(_,_,p,w,n,_) => {
+                        let nf = n as f64;
+                        let w = if p == player {w} else {nf - w};
+                        let avg = (w/nf) as f32;
                         let n = n as f32;
                         let nt = nt as f32;
-                        let w = if p == player {w} else {n - w};
                         let c = self.exploration;
-                        w/n + c*(nt.ln()/n).sqrt()
+                        avg + c*(nt.ln()/n).sqrt()
                     },
                     Node::Transpose(_,_,_) => {
                         panic!("should not be possible to transpose to another transpose");
@@ -287,12 +291,12 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                 let v = self.go(&next,next_index);
 
                 let v = if next.player() == player {v} else {1.0 - v};
-                let w = w + v;
+                let w = w + v as f64;
                 let n = n + 1;
                 self.stack[index] = Node::Branch(s,a,player,w,n,c);
-                
+
                 if index == 0 {
-                    self.info.q = w/(n as f32);
+                    self.info.q = (w/(n as f64)) as f32;
                     self.info.n = n;
                 }
                 
@@ -328,7 +332,7 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                     } else {
                         self.rollout(state)
                     };
-                    self.stack[index] = Node::Leaf(s,a,p,w + v,n + 1);
+                    self.stack[index] = Node::Leaf(s,a,p,w + v as f64,n + 1);
                     v
                 }
             },

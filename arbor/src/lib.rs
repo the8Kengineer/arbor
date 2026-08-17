@@ -53,10 +53,16 @@ pub trait GameState<P: Player, A: Action>: Copy + Debug + Display {
 enum Node<P: Player, A: Action> {
     //sibling?, action, player, value, visits, child
     //s,a,p,w,n,c
+    //
+    //Leaf/Branch's `w` is a running sum over up to `n` per-visit values (each in [0,1]); it's
+    //f64 rather than f32 specifically to avoid precision loss at high visit counts (f32 only
+    //has ~7 significant digits, so a heavily-visited node's sum can silently stop accumulating
+    //small increments well within the iteration counts a long-running search can reach).
+    //Terminal's `w` is a single proven value, never summed further, so f32 is precise enough.
     Unknown(bool,A),
     Terminal(bool,A,P,f32),
-    Leaf(bool,A,P,f32,u32),
-    Branch(bool,A,P,f32,u32,usize),
+    Leaf(bool,A,P,f64,u32),
+    Branch(bool,A,P,f64,u32,usize),
     Transpose(bool,A,usize),
 }
 
