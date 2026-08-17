@@ -232,6 +232,35 @@ fn best_converges_to_the_game_theoretically_correct_move() {
 }
 
 #[test]
+fn uct_ties_are_broken_randomly_not_always_first_sibling() {
+    //On the very first real iteration, all 3 children of the root start tied at
+    //f32::INFINITY (none have been tried yet) - the most visible case of a UCT tie. Which one
+    //gets explored first should vary across independently-seeded searches; before reservoir
+    //sampling it was always whichever action Countdown::actions() enumerates first (Take(1)).
+    let mut counts = [0u32;3];
+
+    for _ in 0..40 {
+        let mut mcts = MCTS::new(Countdown::new(10)).with_entropy();
+        mcts.ponder(1);
+
+        let c = match mcts.stack[0] {
+            Node::Branch(_,_,_,_,_,c) => c,
+            _ => panic!("expected root to be a branch after one iteration"),
+        };
+
+        for offset in 0..3 {
+            if let Node::Leaf(_,Take(k),_,_,_) = mcts.stack[c + offset] {
+                counts[(k - 1) as usize] += 1;
+                break;
+            }
+        }
+    }
+
+    let distinct = counts.iter().filter(|&&n| n > 0).count();
+    assert!(distinct > 1,"expected tie-breaking to vary which child is explored first across 40 runs, got counts {:?}",counts);
+}
+
+#[test]
 fn ponder_zero_after_real_search_is_still_a_noop() {
     let mut mcts = MCTS::new(Countdown::new(10));
     mcts.ponder(50);

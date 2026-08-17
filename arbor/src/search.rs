@@ -178,8 +178,8 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                 let val = if p == player {w} else {1.0 - w};
                 (s,a,val)
             },
-            Node::Unknown(_,a) => {
-                (false,a,f32::INFINITY)
+            Node::Unknown(s,a) => {
+                (s,a,f32::INFINITY)
             },
             Node::Leaf(s,a,p,w,n) |
             Node::Branch(s,a,p,w,n,_) => {
@@ -261,13 +261,24 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
             Node::Branch(s,a,player,w,n,c) => {
                 let mut selection = None;
                 let mut best = -1.0;
+                //Reservoir-sample among ties instead of always keeping the first, so selection
+                //isn't systematically biased toward whichever action a game's actions() happens
+                //to enumerate first (most visibly, every child starts tied at f32::INFINITY
+                //before any of them have been tried).
+                let mut ties: u64 = 0;
                 let mut sibling = Some(c);
-                
+
                 while let Some(u) = sibling {
                     let (s,a,uct) = self.uct(u,player,n);
                     if uct > best {
                         best = uct;
                         selection = Some((a,u));
+                        ties = 1;
+                    } else if uct == best {
+                        ties += 1;
+                        if self.rand.next_u64() % ties == 0 {
+                            selection = Some((a,u));
+                        }
                     }
                     sibling = s.then(||u+1);
                 }
