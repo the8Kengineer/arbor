@@ -795,6 +795,42 @@ fn with_expansion_minimum_rejects_zero() {
 }
 
 #[test]
+fn expansion_minimum_delays_expansion_until_exactly_the_configured_visit_count() {
+    let k = 3;
+    let mut mcts = MCTS::new(Countdown::new(10)).with_expansion_minimum(k);
+    mcts.ponder(1);
+
+    let c = match mcts.stack[0] {
+        Node::Branch(_,_,_,_,_,c) => c,
+        _ => panic!("expected root to be a branch after one iteration"),
+    };
+
+    //Make the other two children look clearly worse, so selection reliably targets index c on
+    //every subsequent pass - the point of this test is the expansion threshold, not selection.
+    mcts.stack[c + 1] = Node::Terminal(true,Take(2),Side::B,1.0); // proven loss for root (Side::A)
+    mcts.stack[c + 2] = Node::Terminal(false,Take(3),Side::B,1.0); // proven loss for root (Side::A)
+
+    //n == k exactly: the condition is strictly n > expansion, so one more visit should still
+    //roll out, not expand yet.
+    mcts.stack[c] = Node::Leaf(true,Take(1),Side::B,1.5,k);
+    mcts.ponder(1);
+    match &mcts.stack[c] {
+        Node::Leaf(_,_,_,_,n) => assert_eq!(*n,k + 1,"should have rolled out (not expanded) at n == expansion"),
+        other => panic!("expected the child to still be a Leaf at n == expansion, got {:?}",other),
+    }
+
+    //n == k + 1 now: the *next* visit should expand. Expansion isn't a separate, otherwise-idle
+    //visit either - go() immediately recurses into the freshly-created Branch and completes a
+    //real grandchild visit + backprop within that same call, so n jumps straight from k + 1 to
+    //k + 2 (not k + 1) the moment it converts.
+    mcts.ponder(1);
+    match &mcts.stack[c] {
+        Node::Branch(_,_,_,_,n,_) => assert_eq!(*n,k + 2,"expansion's first visit should also complete a real grandchild backprop in the same step"),
+        other => panic!("expected the child to have expanded into a Branch at n == expansion + 1, got {:?}",other),
+    }
+}
+
+#[test]
 fn rave_credits_a_sibling_beyond_its_own_direct_visits() {
     //Every ply in Countdown offers the same three actions (Take(1/2/3)), so any single
     //simulation is very likely to replay at least one of the root's own candidate actions again
