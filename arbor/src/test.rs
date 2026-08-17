@@ -1,6 +1,14 @@
 use super::*;
 use std::fmt;
 use std::fmt::Display;
+use rand::SeedableRng;
+
+fn seed_from_u64(seed: u64) -> [u8;16] {
+    let mut s = [0u8;16];
+    s[0..8].copy_from_slice(&seed.to_le_bytes());
+    s[8..16].copy_from_slice(&seed.to_le_bytes());
+    s
+}
 
 ///Test-only combinatorial game: a shared counter starting at `n`. On each turn the side to move
 ///subtracts 1, 2, or 3 (never more than remains). Whoever brings the counter to exactly 0 wins.
@@ -74,6 +82,96 @@ impl GameState<Side,Take> for Countdown {
             //counter and won. Mirrors the "side to play last always wins" pattern used
             //elsewhere in this workspace (e.g. tictactoe).
             Some(GameResult::Lose)
+        } else {
+            None
+        }
+    }
+
+    fn player(&self) -> Side {
+        self.side
+    }
+}
+
+const SLOTS: usize = 8;
+
+///Test-only game built specifically to give RAVE/AMAF a fair test, unlike Countdown: `SLOTS`
+///numbered slots, each with a fixed reward (0 or 1) that does NOT depend on when or by whom
+///it's claimed. Players alternately claim any unclaimed slot, adding its reward to their own
+///running total; once every slot is claimed, whoever has the higher total wins. A slot's value
+///being a fixed property of the slot itself, independent of context, is exactly what AMAF
+///assumes ("this move was good wherever it appeared in the simulation") - and exactly what
+///Countdown's Take(k) does *not* have (its value depends entirely on the current remainder mod
+///4), which is why a RAVE-vs-vanilla comparison on Countdown isn't a meaningful test of RAVE
+///specifically, only of the underlying search machinery in general.
+#[derive(Debug,Copy,Clone,PartialEq)]
+pub struct Pick(pub usize);
+
+impl Action for Pick {}
+
+#[derive(Debug,Copy,Clone)]
+pub struct SlotPick {
+    pub claimed: [bool;SLOTS],
+    pub reward: [u8;SLOTS],
+    pub score_a: u32,
+    pub score_b: u32,
+    pub side: Side,
+}
+
+impl Display for SlotPick {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f,"SlotPick(side={:?},score_a={},score_b={})",self.side,self.score_a,self.score_b)
+    }
+}
+
+impl SlotPick {
+    pub fn new(good_slots: &[usize]) -> Self {
+        let mut reward = [0u8;SLOTS];
+        for &i in good_slots {
+            reward[i] = 1;
+        }
+        SlotPick {
+            claimed: [false;SLOTS],
+            reward,
+            score_a: 0,
+            score_b: 0,
+            side: Side::A,
+        }
+    }
+}
+
+impl GameState<Side,Pick> for SlotPick {
+    fn actions<F>(&self,f: &mut F) where F: FnMut(Pick) {
+        debug_assert!(self.gameover().is_none());
+        for i in 0..SLOTS {
+            if !self.claimed[i] {
+                f(Pick(i));
+            }
+        }
+    }
+
+    fn make(&self,action: Pick) -> Self {
+        let mut next = *self;
+        next.claimed[action.0] = true;
+        match self.side {
+            Side::A => next.score_a += self.reward[action.0] as u32,
+            Side::B => next.score_b += self.reward[action.0] as u32,
+        }
+        next.side = self.side.other();
+        next
+    }
+
+    fn gameover(&self) -> Option<GameResult> {
+        if self.claimed.iter().all(|&c| c) {
+            //self.side has no move left; compare scores from their perspective.
+            let (mine,theirs) = match self.side {
+                Side::A => (self.score_a,self.score_b),
+                Side::B => (self.score_b,self.score_a),
+            };
+            Some(
+                if mine > theirs {GameResult::Win}
+                else if mine < theirs {GameResult::Lose}
+                else {GameResult::Draw}
+            )
         } else {
             None
         }
@@ -477,6 +575,75 @@ fn advance_into_an_already_solved_child_recovers_instead_of_getting_stuck() {
     mcts.ponder(1000);
     assert!(mcts.info.n > 0,"search must still make real progress after advancing into a previously-solved child");
     assert_eq!(mcts.best(),Some(Take(2)),"n=2 is a forced win for Side::B via Take(2) (leaving n=0)");
+}
+
+#[test]
+fn rave_credits_a_sibling_beyond_its_own_direct_visits() {
+    //Every ply in Countdown offers the same three actions (Take(1/2/3)), so any single
+    //simulation is very likely to replay at least one of the root's own candidate actions again
+    //later - exactly the situation RAVE/AMAF is meant to exploit. Note Unknown siblings never
+    //receive credit by design (rave_update only credits Leaf/Branch, which have a stored player
+    //to correctly flip the shared value against - see its doc comment), so this needs enough
+    //iterations for every child to have had its own first visit at least once. If AMAF sharing
+    //is working, at least one child's RAVE visit count should exceed its own direct visit count
+    //- credit picked up from *other* simulations' rollouts, not just its own.
+    let mut mcts = MCTS::new(Countdown::new(20)).with_rave();
+    mcts.ponder(50);
+
+    let c = match mcts.stack[0] {
+        Node::Branch(_,_,_,_,_,c) => c,
+        _ => panic!("expected root to still be a branch after 50 iterations"),
+    };
+
+    let mut found_extra_credit = false;
+    for offset in 0..3 {
+        let n = match mcts.stack[c + offset] {
+            Node::Leaf(_,_,_,_,n) | Node::Branch(_,_,_,_,n,_) => Some(n),
+            _ => None,
+        };
+        if let Some(n) = n {
+            let (rn,_) = mcts.rave[c + offset];
+            if rn > n {
+                found_extra_credit = true;
+            }
+        }
+    }
+
+    assert!(found_extra_credit,"expected at least one child's RAVE visit count to exceed its own direct visit count");
+}
+
+#[test]
+fn rave_converges_at_least_as_reliably_as_vanilla_uct_on_a_tight_budget() {
+    //Slot 4 is the sole reward on an 8-slot board: grabbing it first is the unique winning move
+    //for Side::A (whoever else claims it wins outright, since every other slot is worthless to
+    //both sides). Use a deliberately tight iteration budget - where a lightly-explored root
+    //benefits most from sharing statistics across siblings via AMAF - and compare how often each
+    //approach's best() lands on the correct move across many seeds. See SlotPick's doc comment
+    //for why this game, unlike Countdown, is actually a fair test of RAVE's assumption.
+    let seeds: Vec<u64> = (0..40).collect();
+    let budget = 300;
+    let good_slot = 4;
+
+    let mut vanilla_correct = 0;
+    let mut rave_correct = 0;
+
+    for &seed in &seeds {
+        let mut vanilla = MCTS::new(SlotPick::new(&[good_slot]));
+        vanilla.rand = Rng::from_seed(seed_from_u64(seed));
+        vanilla.ponder(budget);
+        if vanilla.best() == Some(Pick(good_slot)) {
+            vanilla_correct += 1;
+        }
+
+        let mut rave = MCTS::new(SlotPick::new(&[good_slot])).with_rave();
+        rave.rand = Rng::from_seed(seed_from_u64(seed));
+        rave.ponder(budget);
+        if rave.best() == Some(Pick(good_slot)) {
+            rave_correct += 1;
+        }
+    }
+
+    assert!(rave_correct >= vanilla_correct,"expected RAVE to match or beat vanilla UCT's accuracy on a tight budget (rave={}/{}, vanilla={}/{})",rave_correct,seeds.len(),vanilla_correct,seeds.len());
 }
 
 #[test]

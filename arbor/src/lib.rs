@@ -89,13 +89,22 @@ pub struct MCTS<P: Player, A: Action, S: GameState<P,A>> {
     expansion: u32,
     use_custom_evaluation: bool,
     use_transposition: bool,
+    use_rave: bool,
 
     ///Provides metrics about the shape and size of the game tree. For informational purposes only.
     pub info: Info,
-    
+
     root: S,
     stack: Vec<Node<P,A>>,
     actions: Vec<A>,
     rand: Rng,
     map: HashMap<u64,usize>,
+
+    ///RAVE/AMAF statistics (visits, value-sum), one entry per `stack` index when `use_rave` is
+    ///set, kept in lockstep with `stack` - a side table rather than extra fields on every `Node`
+    ///so the (fairly niche, opt-in) feature costs nothing when disabled.
+    rave: Vec<(u32,f64)>,
+    ///Scratch buffer of actions played so far in the simulation currently being backed up,
+    ///reused across iterations. Only populated when `use_rave` is set.
+    played: Vec<A>,
 }

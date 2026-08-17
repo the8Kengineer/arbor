@@ -3,6 +3,11 @@ use rand::SeedableRng;
 use rand::RngCore;
 use std::collections::VecDeque;
 
+///RAVE's equivalence parameter (k in the standard beta = sqrt(k / (3n + k)) blend): roughly how
+///many real visits a node needs before its RAVE estimate stops mattering much. 1000 is a
+///commonly cited default in the RAVE literature (Gelly & Silver).
+const RAVE_EQUIVALENCE: f64 = 1000.0;
+
 impl GameResult {
     #[inline]
     fn value(&self) -> f32 {
@@ -23,12 +28,15 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
             expansion: 0,
             use_custom_evaluation: false,
             use_transposition: false,
+            use_rave: false,
             info: Info::default(),
             root: root,
             stack: Vec::new(),
             actions: Vec::new(),
             rand: Rng::from_seed(s),
             map: HashMap::default(),
+            rave: Vec::new(),
+            played: Vec::new(),
         }
     }
 
@@ -156,20 +164,29 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                 0.5,
                 1
             ));
-            
+            if self.use_rave {
+                self.rave.push((0,0.0));
+            }
+
             self.info.leaf = 1;
             
-            //Call go once with expansion set to zero to force the root to expand 
+            //Call go once with expansion set to zero to force the root to expand
             let root = self.root;
             let expansion = self.expansion;
             self.expansion = 0;
             self.go(&root, 0);
             self.expansion = expansion;
+            if self.use_rave {
+                self.played.clear();
+            }
             self.ponder(n - 1);
         } else {
             let root = self.root;
             for _ in 0..n {
                 self.go(&root,0);
+                if self.use_rave {
+                    self.played.clear();
+                }
             }
             
             self.info.bytes = self.stack.len() * std::mem::size_of::<Node<P,A>>();
@@ -227,6 +244,8 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                 self.stack.clear();
                 self.map.clear();
                 self.info = Info::default();
+                self.rave.clear();
+                self.played.clear();
             }
         }
 
@@ -266,6 +285,7 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
         }
 
         let mut new_stack: Vec<Node<P,A>> = Vec::with_capacity(order.len());
+        let mut new_rave: Vec<(u32,f64)> = Vec::with_capacity(if self.use_rave {order.len()} else {0});
         let mut new_info = Info::default();
 
         for &old_index in &order {
@@ -292,6 +312,17 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                 },
             };
             new_stack.push(node);
+            //Kept in lockstep with new_stack so RAVE data survives relocation for reused nodes,
+            //same as their ordinary visit statistics; a relocated Transpose (now Unknown, see
+            //above) has no RAVE data of its own to carry over, so it gets a fresh zero entry.
+            if self.use_rave {
+                let entry = if matches!(self.stack[old_index],Node::Transpose(_,_,_)) {
+                    (0,0.0)
+                } else {
+                    self.rave[old_index]
+                };
+                new_rave.push(entry);
+            }
         }
 
         new_info.bytes = new_stack.len() * std::mem::size_of::<Node<P,A>>();
@@ -303,6 +334,10 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
         self.stack = new_stack;
         self.map.clear();
         self.info = new_info;
+        if self.use_rave {
+            self.rave = new_rave;
+        }
+        self.played.clear();
     }
 
     fn sibling_flag(&self,index: usize) -> bool {
@@ -350,8 +385,64 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
         if all_are_losses {Some(0.0)} else {None}
     }
 
+    ///Blend the RAVE/AMAF estimate stored at `index` into `avg` (the ordinary per-visit
+    ///average), per the standard beta = sqrt(k / (3n + k)) schedule: beta starts near 1 (RAVE
+    ///dominates while a node has few real visits) and fades toward 0 as `n` grows (a node's own
+    ///accumulated visits are always more trustworthy than the coarser AMAF estimate once there
+    ///are enough of them). A no-op when RAVE is disabled or `index` has no RAVE visits yet.
+    fn rave_blend(&self,index: usize,p: P,player: P,avg: f32,nf: f64) -> f32 {
+        if !self.use_rave {
+            return avg;
+        }
+        let (rn,rw) = self.rave[index];
+        if rn == 0 {
+            return avg;
+        }
+        let rnf = rn as f64;
+        let rw = if p == player {rw} else {rnf - rw};
+        let ravg = (rw/rnf) as f32;
+        let beta = (RAVE_EQUIVALENCE / (3.0*nf + RAVE_EQUIVALENCE)).sqrt() as f32;
+        (1.0 - beta)*avg + beta*ravg
+    }
+
+    ///RAVE/AMAF credit pass: for every Leaf/Branch sibling in this branch's child list (starting
+    ///at `c`) whose own action was played anywhere in the rest of this simulation
+    ///(`self.played[start..]`, which covers both further tree selections below this point and
+    ///the eventual rollout), update its RAVE statistics as if it had been the one actually
+    ///chosen this visit - not just the sibling that really was. `v` is already `player`'s (this
+    ///branch's own mover's) perspective; each sibling's stored `p` may differ (a child's mover
+    ///need not be every game's strict opponent), so it's re-flipped per sibling exactly like an
+    ///ordinary visit would be.
+    ///
+    ///Only Leaf/Branch siblings participate: Unknown has no stored player to flip against
+    ///(assuming strict alternation here would be wrong for games where it doesn't hold), and
+    ///Terminal's proven value is never blended with a noisier AMAF estimate in the first place
+    ///(see rave_blend), so crediting it would only ever go unused.
+    fn rave_update(&mut self,c: usize,player: P,v: f32,start: usize) {
+        let relevant: Vec<A> = self.played[start..].to_vec();
+
+        let mut sibling = Some(c);
+        while let Some(u) = sibling {
+            let has_sibling = match self.stack[u] {
+                Node::Leaf(s,a,p,_,_) |
+                Node::Branch(s,a,p,_,_,_) => {
+                    if relevant.contains(&a) {
+                        let credit = if p == player {v as f64} else {1.0 - v as f64};
+                        let (rn,rw) = self.rave[u];
+                        self.rave[u] = (rn + 1,rw + credit);
+                    }
+                    s
+                },
+                Node::Terminal(s,_,_,_) => s,
+                Node::Unknown(s,_) => s,
+                Node::Transpose(s,_,_) => s,
+            };
+            sibling = has_sibling.then(||u+1);
+        }
+    }
+
     fn uct(&self,index: usize, player: P, nt: u32) -> (bool,A,f32) {
-        
+
         match self.stack[index] {
             Node::Terminal(s,a,p,w) => {
                 let val = if p == player {w} else {1.0 - w};
@@ -364,7 +455,7 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
             Node::Branch(s,a,p,w,n,_) => {
                 let nf = n as f64;
                 let w = if p == player {w} else {nf - w};
-                let avg = (w/nf) as f32;
+                let avg = self.rave_blend(index,p,player,(w/nf) as f32,nf);
                 let n = n as f32;
                 let nt = nt as f32;
                 let c = self.exploration;
@@ -372,7 +463,7 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                 (s,a,val)
             },
             Node::Transpose(s,a,u) => {
-                
+
                 //Do not use recursion to allow the compiler to inline
                 let v = match self.stack[u] {
                     Node::Terminal(_,_,p,w) => {
@@ -385,7 +476,7 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                     Node::Branch(_,_,p,w,n,_) => {
                         let nf = n as f64;
                         let w = if p == player {w} else {nf - w};
-                        let avg = (w/nf) as f32;
+                        let avg = self.rave_blend(u,p,player,(w/nf) as f32,nf);
                         let n = n as f32;
                         let nt = nt as f32;
                         let c = self.exploration;
@@ -399,7 +490,7 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
             }
         }
     }
-    
+
     fn rollout(&mut self,state: &S) -> f32 {
         let mut sim;
         let mut s = state;
@@ -427,14 +518,19 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
 
             //use rejection sampling to choose a random action
             let mask = max.next_power_of_two() - 1;
+            let chosen;
             loop {
                 let r = (self.rand.next_u64() as usize) & mask;
                 if r < max {
-                    sim = s.make(self.actions[r]);
+                    chosen = self.actions[r];
+                    sim = s.make(chosen);
                     break;
                 }
             }
-            
+            if self.use_rave {
+                self.played.push(chosen);
+            }
+
             s = &sim;
         }
     }
@@ -466,6 +562,12 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                     sibling = s.then(||u+1);
                 }
                 let (action,next_index) = selection.expect("should find a best action");
+
+                let rave_start = self.played.len();
+                if self.use_rave {
+                    self.played.push(action);
+                }
+
                 let next = state.make(action);
                 let v = self.go(&next,next_index);
 
@@ -473,6 +575,10 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                 let w = w + v as f64;
                 let n = n + 1;
                 self.stack[index] = Node::Branch(s,a,player,w,n,c);
+
+                if self.use_rave {
+                    self.rave_update(c,player,v,rave_start);
+                }
 
                 //MCTS-Solver: the child just visited may have resolved this branch's own value
                 //for certain (see solved_value's doc comment). Once solved, short-circuit to
@@ -511,6 +617,9 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                     state.actions(&mut |a| {
                         self.stack.push(Node::Unknown(true,a));
                         self.info.unknown += 1;
+                        if self.use_rave {
+                            self.rave.push((0,0.0));
+                        }
                     });
 
                     assert!(

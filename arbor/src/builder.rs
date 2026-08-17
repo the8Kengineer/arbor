@@ -28,7 +28,13 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
         self.use_transposition = true;
         self
     }
-    
+
+    ///Enables RAVE (Rapid Action Value Estimation), a form of AMAF (all-moves-as-first) that shares statistics for a move across every simulation that plays it anywhere later in the tree, not just the simulations that visited it as the immediate next move from a given position. This gives much faster early convergence than plain UCT, at the cost of a bias that fades out (via the standard beta = sqrt(k / (3n + k)) blend) as a node accumulates real visits. Off by default since it changes search behavior; opt in explicitly.
+    pub fn with_rave(mut self) -> Self {
+        self.use_rave = true;
+        self
+    }
+
     ///Seeds the internal random number generator from entropy. This is inteneded to produce non-deterministic search results.
     pub fn with_entropy(mut self) -> Self {
         use rand::SeedableRng;
