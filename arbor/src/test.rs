@@ -363,6 +363,36 @@ fn best_prefers_any_unresolved_move_over_a_proven_loss() {
 }
 
 #[test]
+fn best_prefers_a_proven_draw_over_an_unresolved_move_with_the_same_average() {
+    //Neither GameResult::Draw's 0.5 value nor best()'s tier-2 ("proven draw") ranking was ever
+    //exercised by any existing test - every prior best() test used only wins/losses (tiers 0 and
+    //3). A proven draw should still be preferred over an *unresolved* move even when that move's
+    //current average looks identical, since the unresolved one isn't actually guaranteed to stay
+    //that good (unlike best_prefers_visit_count_over_lucky_average, which is about two
+    //unresolved moves compared to each other, not a proven value against an estimate).
+    let mut mcts = MCTS::new(Countdown::new(10));
+    mcts.ponder(1);
+
+    mcts.stack[1] = Node::Terminal(true,Take(1),Side::B,0.5); // proven draw
+    mcts.stack[2] = Node::Leaf(true,Take(2),Side::B,25.0,50); // root-perspective avg 0.50, n=50 - same apparent average, but not proven
+    mcts.stack[3] = Node::Leaf(false,Take(3),Side::B,26.0,50); // root-perspective avg 0.48, n=50
+
+    assert_eq!(mcts.best(),Some(Take(1)),"a proven draw should be preferred over an unresolved move even with the same apparent average");
+}
+
+#[test]
+fn slotpick_can_actually_reach_a_draw() {
+    //Two equal-value slots and alternating turns: correct play from both sides splits them one
+    //each, a real 1-1 tie. Confirms GameResult::Draw's path through gameover() -> Terminal
+    //actually fires during real search, not just when hand-constructed as in the test above.
+    let mut mcts = MCTS::new(SlotPick::new(&[2,5]));
+    mcts.ponder(20000);
+
+    let found_draw = mcts.stack.iter().any(|node| matches!(node,Node::Terminal(_,_,_,w) if *w == 0.5));
+    assert!(found_draw,"expected at least one proven-draw Terminal (value 0.5) after 20000 iterations on a game with a genuine drawing line");
+}
+
+#[test]
 fn best_converges_to_the_game_theoretically_correct_move() {
     //n=6: taking 2 leaves the opponent at n=4, a losing position for them (4 % 4 == 0) - the
     //unique correct move. An end-to-end convergence check, complementing the two precise tests
