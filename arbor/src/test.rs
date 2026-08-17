@@ -783,6 +783,18 @@ fn transposition_still_converges_to_the_correct_move() {
 }
 
 #[test]
+#[should_panic(expected = "positive value")]
+fn with_exploration_rejects_zero() {
+    MCTS::new(Countdown::new(10)).with_exploration(0.0);
+}
+
+#[test]
+#[should_panic(expected = "greater than zero")]
+fn with_expansion_minimum_rejects_zero() {
+    MCTS::new(Countdown::new(10)).with_expansion_minimum(0);
+}
+
+#[test]
 fn rave_credits_a_sibling_beyond_its_own_direct_visits() {
     //Every ply in Countdown offers the same three actions (Take(1/2/3)), so any single
     //simulation is very likely to replay at least one of the root's own candidate actions again
