@@ -1,5 +1,7 @@
 extern crate arbor;
 mod reversi;
+#[cfg(test)]
+mod test;
 use self::reversi::*;
 use std::io;
 use std::env;
