@@ -550,6 +550,34 @@ fn rave_and_puct_together_still_converge_correctly() {
 }
 
 #[test]
+fn advance_works_correctly_across_several_sequential_real_moves() {
+    //Every existing advance() test calls it exactly once. Play several real moves in a row -
+    //ponder, pick a move, advance, repeat - the way every game in this workspace's main.rs (and
+    //www's GameUI) actually would if wired up to use it, and confirm the relocated tree's own
+    //idea of the position matches independently replaying the same moves from scratch each time.
+    let mut mcts = MCTS::new(Countdown::new(20));
+    let mut expected = Countdown::new(20);
+
+    for _ in 0..4 {
+        if expected.gameover().is_some() {
+            break;
+        }
+
+        mcts.ponder(2000);
+        let action = mcts.best().expect("should have a best move");
+        expected = expected.make(action);
+        mcts = mcts.advance(action);
+
+        assert_eq!(mcts.root.n,expected.n,"the relocated tree's root should match independently replaying the same move");
+        assert_eq!(mcts.root.side,expected.side);
+
+        //The relocated tree should still be genuinely searchable, not just structurally intact.
+        mcts.ponder(500);
+        assert!(mcts.best().is_some());
+    }
+}
+
+#[test]
 fn best_converges_to_the_game_theoretically_correct_move() {
     //n=6: taking 2 leaves the opponent at n=4, a losing position for them (4 % 4 == 0) - the
     //unique correct move. An end-to-end convergence check, complementing the two precise tests
