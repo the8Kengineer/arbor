@@ -451,6 +451,87 @@ fn info_counts_match_the_stack_with_transposition() {
 }
 
 #[test]
+fn ply_on_empty_stack_calls_nothing() {
+    let mcts = MCTS::new(Countdown::new(10));
+    let mut calls = 0;
+    mcts.ply(&mut |_| calls += 1);
+    assert_eq!(calls,0,"ply() before any ponder() call should invoke the callback zero times");
+}
+
+#[test]
+fn ply_on_gameover_root_calls_nothing() {
+    let mut mcts = MCTS::new(Countdown::new(0));
+    mcts.ponder(10);
+    let mut calls = 0;
+    mcts.ply(&mut |_| calls += 1);
+    assert_eq!(calls,0,"ply() on an already-decided root should invoke the callback zero times");
+}
+
+#[test]
+fn ply_reports_the_exact_average_for_each_child() {
+    let mut mcts = MCTS::new(Countdown::new(10));
+    mcts.ponder(1);
+
+    mcts.stack[1] = Node::Leaf(true,Take(1),Side::B,3.0,10);  // root-perspective avg 0.7
+    mcts.stack[2] = Node::Terminal(true,Take(2),Side::B,0.0); // proven win for root (Side::A)
+    mcts.stack[3] = Node::Unknown(false,Take(3));
+
+    let mut reported: Vec<(Take,f32,f32)> = Vec::new();
+    mcts.ply(&mut |entry| reported.push(entry));
+
+    reported.sort_by_key(|(a,_,_)| a.0);
+    assert_eq!(reported.len(),3);
+
+    let (a1,w1,e1) = reported[0];
+    assert_eq!(a1,Take(1));
+    assert!((w1 - 0.7).abs() < 1e-6,"expected Take(1)'s average to be exactly 0.7, got {}",w1);
+    assert!(e1 > 0.0,"a Leaf's confidence value should be a real (nonzero) standard-error-like estimate");
+
+    let (a2,w2,e2) = reported[1];
+    assert_eq!(a2,Take(2));
+    assert_eq!(w2,1.0,"a proven win should report exactly 1.0");
+    assert_eq!(e2,0.0,"a proven Terminal has zero uncertainty by definition");
+
+    let (a3,w3,e3) = reported[2];
+    assert_eq!(a3,Take(3));
+    assert_eq!(w3,0.5,"an Unknown (never visited) child should report the neutral default 0.5");
+    assert_eq!(e3,0.5,"an Unknown child's confidence should report the neutral default 0.5");
+}
+
+#[test]
+fn ply_reports_the_raw_average_not_the_rave_blended_value() {
+    //ply() is a reporting API (e.g. www's move-strength UI coloring); it intentionally does not
+    //call rave_blend() the way uct() does for search guidance - confirmed here by giving a node
+    //a RAVE bias strong enough that the blended value would clearly differ from the raw average,
+    //and checking ply() still reports the raw one.
+    let mut mcts = MCTS::new(Countdown::new(10)).with_rave();
+    mcts.ponder(1);
+
+    mcts.stack[1] = Node::Leaf(true,Take(1),Side::B,5.0,10); // root-perspective avg 0.5
+    mcts.rave[1] = (1000,0.0); // if blended in, would pull the reported value toward 1.0
+
+    let mut reported: Vec<(Take,f32,f32)> = Vec::new();
+    mcts.ply(&mut |entry| reported.push(entry));
+    let (_,w,_) = reported.into_iter().find(|(a,_,_)| *a == Take(1)).expect("Take(1) should be reported");
+
+    assert!((w - 0.5).abs() < 1e-6,"expected the raw average (0.5), unaffected by the RAVE bias, got {}",w);
+}
+
+#[test]
+#[should_panic(expected = "Transpositions should not be possible at root ply")]
+fn ply_panics_if_a_root_child_is_itself_a_transpose() {
+    //Documented as impossible for any root reachable through ordinary play (a root's own
+    //children are always the *first* nodes to represent their position, so they're never a
+    //transposition *target* themselves at that point) - constructed directly here since no real
+    //game in this suite can actually produce it, to confirm the documented panic still fires
+    //rather than silently doing something else if this invariant is ever violated.
+    let mut mcts = MCTS::new(Countdown::new(10));
+    mcts.ponder(1);
+    mcts.stack[1] = Node::Transpose(true,Take(1),2);
+    mcts.ply(&mut |_| {});
+}
+
+#[test]
 fn best_converges_to_the_game_theoretically_correct_move() {
     //n=6: taking 2 leaves the opponent at n=4, a losing position for them (4 % 4 == 0) - the
     //unique correct move. An end-to-end convergence check, complementing the two precise tests
