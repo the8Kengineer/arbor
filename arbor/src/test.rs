@@ -578,6 +578,28 @@ fn advance_works_correctly_across_several_sequential_real_moves() {
 }
 
 #[test]
+fn full_game_played_to_completion_via_the_public_api() {
+    //n=15 isn't a multiple of 4, so Side::A (the first mover) has a forced win with correct play
+    //from both sides. Plays a complete game using only ponder/best/advance in a loop - the same
+    //pattern every real game's main.rs (and www's GameUI) uses - rather than reaching into
+    //arbor's internals directly, as an end-to-end check that they compose correctly together
+    //all the way to a real conclusion, not just individually.
+    let mut mcts = MCTS::new(Countdown::new(15));
+    let mut moves = 0;
+
+    while mcts.root.gameover().is_none() {
+        mcts.ponder(3000);
+        let action = mcts.best().expect("should have a best move while the game isn't over");
+        mcts = mcts.advance(action);
+        moves += 1;
+        assert!(moves <= 15,"the game should have ended by now - n only ever decreases from 15");
+    }
+
+    assert!(matches!(mcts.root.gameover(),Some(GameResult::Lose)),"Countdown's own gameover() always reports Lose for whoever is stuck at n == 0");
+    assert_eq!(mcts.root.side,Side::B,"Side::A has a forced win from n=15 (not a multiple of 4) with correct play from both sides, so Side::B should be the one left stuck");
+}
+
+#[test]
 fn best_converges_to_the_game_theoretically_correct_move() {
     //n=6: taking 2 leaves the opponent at n=4, a losing position for them (4 % 4 == 0) - the
     //unique correct move. An end-to-end convergence check, complementing the two precise tests
