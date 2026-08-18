@@ -189,9 +189,13 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
                     self.played.clear();
                 }
             }
-            
-            self.info.bytes = self.stack.len() * std::mem::size_of::<Node<P,A>>();
         }
+
+        //Unconditional (rather than only in the `else` branch above) so a ponder(1) call on a
+        //fresh instance - which only ever takes the bootstrap branch, since its own recursive
+        //self.ponder(n - 1) call immediately returns via the n == 0 guard without reaching that
+        //branch - still reports an accurate size instead of leaving Info::default()'s 0.
+        self.info.bytes = self.stack.len() * std::mem::size_of::<Node<P,A>>();
     }
 
     ///Advance the search onto the state that results from playing `action` at the root, reusing

@@ -10,6 +10,17 @@ fn seed_from_u64(seed: u64) -> [u8;16] {
     s
 }
 
+///Every node ever pushed onto `stack` belongs to exactly one of these five categories at any
+///given moment (recategorized in place as it changes type - e.g. Leaf -> Branch on expansion,
+///Branch -> Terminal on solving - never removed), so these counts should always sum to the
+///stack's full length, including nodes that have since become orphaned (unreachable from the
+///live tree, e.g. a solved-away subtree's discarded children) but are still physically present.
+fn assert_info_counts_match_stack<P: Player,A: Action,S: GameState<P,A>>(mcts: &MCTS<P,A,S>) {
+    let total = mcts.info.branch + mcts.info.leaf + mcts.info.terminal + mcts.info.unknown + mcts.info.transpose;
+    assert_eq!(total as usize,mcts.stack.len(),"Info's node-type counts should sum to the stack's length");
+    assert_eq!(mcts.info.bytes,mcts.stack.len() * std::mem::size_of::<Node<P,A>>(),"Info.bytes should match the stack's actual size");
+}
+
 ///Test-only combinatorial game: a shared counter starting at `n`. On each turn the side to move
 ///subtracts 1, 2, or 3 (never more than remains). Whoever brings the counter to exactly 0 wins.
 ///This is the classic subtraction game with optimal play trivial to verify by hand: a position is
@@ -390,6 +401,53 @@ fn slotpick_can_actually_reach_a_draw() {
 
     let found_draw = mcts.stack.iter().any(|node| matches!(node,Node::Terminal(_,_,_,w) if *w == 0.5));
     assert!(found_draw,"expected at least one proven-draw Terminal (value 0.5) after 20000 iterations on a game with a genuine drawing line");
+}
+
+#[test]
+fn info_counts_match_the_stack_after_normal_search() {
+    let mut mcts = MCTS::new(Countdown::new(30));
+    mcts.ponder(5000);
+    assert_info_counts_match_stack(&mcts);
+}
+
+#[test]
+fn info_counts_match_the_stack_after_a_bootstrap_only_ponder_call() {
+    //Regression coverage for the fix just above: ponder(1) on a fresh instance only ever takes
+    //the bootstrap branch (its own recursive self.ponder(0) call returns immediately via the
+    //n == 0 guard), which used to skip the line that sets Info.bytes entirely.
+    let mut mcts = MCTS::new(Countdown::new(10));
+    mcts.ponder(1);
+    assert_info_counts_match_stack(&mcts);
+    assert!(mcts.info.bytes > 0,"Info.bytes should be set after even a single iteration, not left at Info::default()'s 0");
+}
+
+#[test]
+fn info_counts_match_the_stack_after_solving() {
+    //n=4 fully solves quickly (see solver_proves_a_forced_loss_and_stops_further_work) - the
+    //discarded/orphaned children of whatever gets solved away should still count toward the
+    //total, since they're still physically present in the stack even though unreachable.
+    let mut mcts = MCTS::new(Countdown::new(4));
+    mcts.ponder(5000);
+    assert_info_counts_match_stack(&mcts);
+}
+
+#[test]
+fn info_counts_match_the_stack_after_advance() {
+    let mut mcts = MCTS::new(Countdown::new(30));
+    mcts.ponder(5000);
+    let action = mcts.best().expect("should have a best move");
+    let mut mcts = mcts.advance(action);
+    assert_info_counts_match_stack(&mcts);
+
+    mcts.ponder(2000);
+    assert_info_counts_match_stack(&mcts);
+}
+
+#[test]
+fn info_counts_match_the_stack_with_transposition() {
+    let mut mcts = MCTS::new(Countdown::new(20)).with_transposition();
+    mcts.ponder(5000);
+    assert_info_counts_match_stack(&mcts);
 }
 
 #[test]
