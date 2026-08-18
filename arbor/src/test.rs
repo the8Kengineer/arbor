@@ -532,6 +532,24 @@ fn ply_panics_if_a_root_child_is_itself_a_transpose() {
 }
 
 #[test]
+fn rave_and_puct_can_be_enabled_together() {
+    let mcts = MCTS::new(Countdown::new(10)).with_rave().with_puct();
+    assert!(mcts.use_rave,"with_rave() should still take effect when chained with with_puct()");
+    assert!(mcts.use_puct,"with_puct() should still take effect when chained with with_rave()");
+}
+
+#[test]
+fn rave_and_puct_together_still_converge_correctly() {
+    //n=13: taking 1 leaves the opponent at the forced-loss position n=12 (12 % 4 == 0) - the
+    //unique correct move. rave_blend() feeds into the same avg that exploration_term() (PUCT's
+    //formula) is added to in uct() - confirms combining both doesn't corrupt or cancel out
+    //either effect on a real search.
+    let mut mcts = MCTS::new(Countdown::with_policy_bias(13,1)).with_rave().with_puct();
+    mcts.ponder(20000);
+    assert_eq!(mcts.best(),Some(Take(1)));
+}
+
+#[test]
 fn best_converges_to_the_game_theoretically_correct_move() {
     //n=6: taking 2 leaves the opponent at n=4, a losing position for them (4 % 4 == 0) - the
     //unique correct move. An end-to-end convergence check, complementing the two precise tests
