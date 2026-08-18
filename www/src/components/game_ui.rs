@@ -97,11 +97,11 @@ pub enum Msg<A: GIAction> {
     None,
 }
 
-fn fmt_ai_time(n: u64) -> String {
+pub(crate) fn fmt_ai_time(n: u64) -> String {
     format!("{}",n)
 }
 
-fn fmt_ai_eve(n: u64) -> String {
+pub(crate) fn fmt_ai_eve(n: u64) -> String {
     format!("{:0.2}",(n as f32) / 20.0)
 }
 

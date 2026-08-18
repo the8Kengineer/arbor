@@ -2,6 +2,8 @@ use yew::prelude::*;
 mod util;
 mod components;
 mod description;
+#[cfg(test)]
+mod test;
 use tictactoe::*;
 use mancala::*;
 use reversi::*;
