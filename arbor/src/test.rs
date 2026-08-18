@@ -127,6 +127,97 @@ impl GameState<Side,Take> for Countdown {
     }
 }
 
+//Countdown itself is used everywhere below as a vehicle for exercising arbor's search machinery
+//(convergence, the solver, transposition, RAVE, PUCT...), but none of those tests pin down
+//Countdown's own GameState implementation in isolation - they'd pass just as well if e.g. its
+//hash() were subtly wrong, as long as the resulting search behavior happened to still look
+//right. These test Countdown directly, with no MCTS involved.
+#[test]
+fn countdown_actions_are_bounded_by_the_remaining_count() {
+    let mut moves = Vec::new();
+    Countdown::new(2).actions(&mut |m| moves.push(m));
+    moves.sort_by_key(|t| t.0);
+    assert_eq!(moves,vec![Take(1),Take(2)]);
+}
+
+#[test]
+fn countdown_actions_offers_all_three_takes_once_n_is_large_enough() {
+    let mut moves = Vec::new();
+    Countdown::new(10).actions(&mut |m| moves.push(m));
+    moves.sort_by_key(|t| t.0);
+    assert_eq!(moves,vec![Take(1),Take(2),Take(3)]);
+}
+
+#[test]
+#[should_panic]
+fn countdown_actions_panics_once_the_game_is_already_over() {
+    Countdown::new(0).actions(&mut |_| {});
+}
+
+#[test]
+fn countdown_make_decrements_n_and_flips_the_side() {
+    let g = Countdown::new(10).make(Take(3));
+    assert_eq!(g.n,7);
+    assert_eq!(g.side,Side::B);
+}
+
+#[test]
+fn countdown_gameover_is_lose_only_at_exactly_zero() {
+    assert!(Countdown::new(1).gameover().is_none());
+
+    match Countdown::new(0).gameover() {
+        Some(GameResult::Lose) => {}
+        other => panic!("expected Lose at n=0, got {:?}",other),
+    }
+}
+
+#[test]
+fn is_losing_position_matches_n_mod_4() {
+    for n in 0..20 {
+        assert_eq!(Countdown::new(n).is_losing_position(),n % 4 == 0,"mismatch at n={}",n);
+    }
+}
+
+#[test]
+fn hash_encodes_n_and_side_uniquely_but_ignores_favored() {
+    let a = Countdown {n: 5, side: Side::A, favored: None};
+    let b = Countdown {n: 5, side: Side::B, favored: None};
+    let c = Countdown {n: 6, side: Side::A, favored: None};
+    let a_biased = Countdown {n: 5, side: Side::A, favored: Some(2)};
+
+    assert_ne!(a.hash(),b.hash(),"same n, different side should hash differently");
+    assert_ne!(a.hash(),c.hash(),"different n should hash differently");
+    assert_eq!(a.hash(),a_biased.hash(),"favored is not part of the position and must not affect the hash");
+}
+
+#[test]
+fn hash_is_the_same_for_different_move_orders_reaching_the_same_position() {
+    //Take(1) then Take(2), and Take(2) then Take(1), both remove 3 total across 2 plies and
+    //land on the same (n,side) - a genuine, deliberately-constructed transposition, exactly the
+    //property hash()'s doc comment claims.
+    let via_1_then_2 = Countdown::new(10).make(Take(1)).make(Take(2));
+    let via_2_then_1 = Countdown::new(10).make(Take(2)).make(Take(1));
+
+    assert_eq!(via_1_then_2.n,via_2_then_1.n);
+    assert_eq!(via_1_then_2.side,via_2_then_1.side);
+    assert_eq!(via_1_then_2.hash(),via_2_then_1.hash());
+}
+
+#[test]
+fn policy_is_uniform_without_a_favored_move() {
+    let g = Countdown::new(10);
+    assert_eq!(g.policy(Take(1)),g.policy(Take(2)));
+    assert_eq!(g.policy(Take(2)),g.policy(Take(3)));
+}
+
+#[test]
+fn policy_strongly_favors_the_biased_move_only() {
+    let g = Countdown::with_policy_bias(10,2);
+    assert!(g.policy(Take(2)) > g.policy(Take(1)));
+    assert!(g.policy(Take(2)) > g.policy(Take(3)));
+    assert_eq!(g.policy(Take(1)),g.policy(Take(3)));
+}
+
 const SLOTS: usize = 8;
 
 ///Test-only game built specifically to give RAVE/AMAF a fair test, unlike Countdown: `SLOTS`
