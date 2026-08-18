@@ -228,3 +228,6 @@ impl GameState<Disc,Column> for Connect4 {
         if self.side {Disc::R} else {Disc::Y}
     }
 }
+
+#[cfg(test)]
+mod test;
