@@ -32,6 +32,9 @@ fn app(_props: &Props) -> Html {
             <div class="main-layout-cell onestone">
                 <GameUI<onestone::Side,onestone::Move,onestone::Onestone>/>
             </div>
+            <div class="main-layout-cell checkers">
+                <GameUI<checkers::Side,checkers::Move,checkers::Checkers>/>
+            </div>
         </div>
     }
 }
