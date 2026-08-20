@@ -10,3 +10,14 @@ c/baseline
 *.cfg
 data
 ci
+
+# Environment variables and secrets - never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*apikey*
+*api_key*
+secrets.*
+credentials.*
