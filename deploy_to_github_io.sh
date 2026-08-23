@@ -1,8 +1,8 @@
 cd www &&
-rm dist/* &&
+rm -rf dist/* &&
 trunk build --release &&
 cd .. &&
-rm docs/*
-cp www/dist/* docs/ &&
+rm -rf docs/*
+cp -R www/dist/* docs/ &&
 sed -i '' -e 's#/index#./index#g; s#/www#./www#g' ./docs/index.html
 git add docs/*
