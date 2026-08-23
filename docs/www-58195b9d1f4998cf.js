@@ -281,7 +281,7 @@ function __wbg_get_imports() {
             return ret;
         }, arguments); },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("Event")], shim_idx: 818, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("Event")], shim_idx: 817, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
             const ret = makeClosure(arg0, arg1, wasm_bindgen_12b24d073c3756a2___convert__closures_____invoke___web_sys_ccca624b2064202d___features__gen_Event__Event______true_);
             return ret;
         },
@@ -312,7 +312,7 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./www-8cb796efa5d915d5_bg.js": import0,
+        "./www-58195b9d1f4998cf_bg.js": import0,
     };
 }
 
@@ -646,7 +646,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (module_or_path === undefined) {
-        module_or_path = new URL('www-8cb796efa5d915d5_bg.wasm', import.meta.url);
+        module_or_path = new URL('www-58195b9d1f4998cf_bg.wasm', import.meta.url);
     }
     const imports = __wbg_get_imports();
 
