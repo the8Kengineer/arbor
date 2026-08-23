@@ -255,6 +255,77 @@ fn pawn_promotes_to_queen_on_reaching_the_far_rank() {
     assert_eq!(capture.piece.kind, PieceType::Queen);
 }
 
+// ---------- random opening army (Game::new's actual starting position) ----------
+
+#[test]
+fn random_setup_obeys_the_design_docs_rank_constraints() {
+    let king_col = WIDTH / 2;
+
+    for seed in [1u64, 2, 42, 9999, u64::MAX] {
+        let board = setup::random_setup(seed);
+        for &(player, back_row, middle_row, front_row) in &[
+            (Player::Black, 0, 1, 2),
+            (Player::White, HEIGHT - 1, HEIGHT - 2, HEIGHT - 3),
+        ] {
+            for col in 0..WIDTH {
+                let back = board.get(Pos::new(col, back_row)).unwrap().kind;
+                let middle = board.get(Pos::new(col, middle_row)).unwrap().kind;
+                let front = board.get(Pos::new(col, front_row)).unwrap().kind;
+
+                if col == king_col {
+                    assert_eq!(back, PieceType::King, "seed {}: {:?}'s king should be dead-centre of the back rank", seed, player);
+                } else {
+                    assert_ne!(back, PieceType::King, "seed {}: only one king per side", seed);
+                    assert_ne!(back, PieceType::Pawn, "seed {}: back rank cannot have pawns", seed);
+                }
+
+                assert_ne!(middle, PieceType::King, "seed {}: middle rank cannot have a king", seed);
+
+                assert!(
+                    matches!(front, PieceType::Pawn | PieceType::Knight | PieceType::Bishop | PieceType::Falcon),
+                    "seed {}: front rank piece {:?} is outside the allowed set", seed, front
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn random_setup_varies_with_the_seed() {
+    let a = setup::random_setup(1);
+    let b = setup::random_setup(2);
+    assert_ne!(a, b, "different seeds should produce different armies");
+}
+
+#[test]
+fn random_setup_gives_each_side_an_independently_different_mix() {
+    let board = setup::random_setup(1);
+
+    let ranks_for = |rows: [i8; 3]| -> Vec<PieceType> {
+        (0..WIDTH)
+            .flat_map(|col| rows.into_iter().map(move |row| board.get(Pos::new(col, *row)).unwrap().kind))
+            .collect()
+    };
+
+    let black = ranks_for([0, 1, 2]);
+    let white = ranks_for([HEIGHT - 1, HEIGHT - 2, HEIGHT - 3]);
+    assert_ne!(black, white, "the two sides should not end up with the same piece mix");
+}
+
+#[test]
+fn new_game_always_starts_in_play_regardless_of_the_random_setup() {
+    // Game::new draws a fresh random army each call; run it several times rather than trusting
+    // a single roll of the dice.
+    for _ in 0..20 {
+        let g = Game::new();
+        assert!(g.gameover().is_none(), "a random opening position should never already be over");
+
+        let mut count = 0;
+        g.actions(&mut |_| count += 1);
+        assert!(count > 0, "White should always have at least one legal opening move");
+    }
+}
+
 #[test]
 fn mcts_finds_a_move_from_the_opening_position() {
     let g = Game::new();

@@ -25,10 +25,12 @@ pub struct Game {
 }
 
 impl Game {
-    /// arbor's opening position for ChessBattle70: Default-B (symmetric
-    /// armies, both sides can castle) under the default FalconMammoth rules.
+    /// arbor's opening position for ChessBattle70: a fresh random army for
+    /// each side (see `setup::random_setup`) under the default FalconMammoth
+    /// rules, so every new game starts with a different, independently-
+    /// rolled piece mix per side rather than always the same layout.
     pub fn new() -> Self {
-        Game::from_setup(setup::default_setup_b(), RaptorPachydermRules::default())
+        Game::from_setup(setup::random_setup(setup::random_seed()), RaptorPachydermRules::default())
     }
 
     pub fn from_setup(board: Board, rules: RaptorPachydermRules) -> Self {

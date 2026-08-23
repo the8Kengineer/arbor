@@ -144,13 +144,24 @@ fn random_army(board: &mut Board, player: Player, rng: &mut Rng, back_row: i8, m
 
 /// A fully random army for both sides, independently rolled (not mirrored
 /// or symmetric -- matches the design doc's "box of chessmen and a d12"
-/// framing). Not currently wired into `Game::new`/the UI, but exercised by
-/// this crate's own tests.
-#[allow(dead_code)]
+/// framing, and means the two sides end up with genuinely different piece
+/// mixes, not just different colors of the same mix). This is `Game::new`'s
+/// opening position - see `random_seed` for where the seed comes from.
 pub fn random_setup(seed: u64) -> Board {
     let mut board = Board::empty();
     let mut rng = Rng::new(seed);
     random_army(&mut board, Player::Black, &mut rng, 0, 1, 2);
     random_army(&mut board, Player::White, &mut rng, HEIGHT - 1, HEIGHT - 2, HEIGHT - 3);
     board
+}
+
+/// A fresh, non-deterministic seed for `random_setup`, so every new game
+/// gets a different army mix rather than the same one every time. Mirrors
+/// `onestone`'s identical `random_seed` (see onestone/src/onestone.rs) -
+/// `getrandom`'s "js" feature (see Cargo.toml) makes this work both
+/// natively and compiled to wasm in the browser (via crypto.getRandomValues).
+pub fn random_seed() -> u64 {
+    let mut buf = [0u8; 8];
+    getrandom::getrandom(&mut buf).expect("getrandom failed to produce a seed");
+    u64::from_le_bytes(buf)
 }
