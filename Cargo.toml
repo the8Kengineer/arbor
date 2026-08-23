@@ -8,6 +8,7 @@ members = [
     "reversi",
     "connect4",
     "tictactoe",
+    "chessbattle70",
     "www",
 ]
 
