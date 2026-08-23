@@ -38,6 +38,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "checkers"
+version = "0.1.0"
+dependencies = [
+ "arbor",
+ "getrandom",
+ "instant",
+ "lazy_static",
+ "rand",
+ "rand_xorshift",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "chessbattle70"
 version = "0.1.0"
 dependencies = [
@@ -600,6 +614,7 @@ name = "www"
 version = "0.1.0"
 dependencies = [
  "arbor",
+ "checkers",
  "chessbattle70",
  "connect4",
  "gloo-console",

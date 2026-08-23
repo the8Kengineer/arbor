@@ -17,12 +17,11 @@ body {
         "reversi"
         "connect4"
         "onestone"
-        "checkers"
-        "chessbattle70";
+        "checkers";
 
     gap: 100px;
     /* grid-auto-rows: 1fr; */
-    grid-template-rows: 100% repeat(7,1fr);
+    grid-template-rows: 100% repeat(6,1fr);
 }
 
 .main-layout-cell {
@@ -480,71 +479,3 @@ li{
 .checkers-cell.king .checkers-piece {
     border: 4px solid #d3a94d;
 }
-
-/*------------------------------------------------------------------------------
- *                                  ChessBattle70
- * ---------------------------------------------------------------------------*/
-
-.chessbattle70 {
-    grid-area: chessbattle70;
-}
-
-/* This board is deliberately 7 wide x 10 tall (the whole point of the design -
-   "chess optimised for tall, narrow displays"), unlike every other game's square
-   board, so it needs its own aspect-ratio container instead of the 100%
-   (square) padding-bottom trick .board-container-parent uses. */
-.chessbattle70-container {
-    padding-bottom: 142.857%;
-}
-
-.chessbattle70-board {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    grid-template-rows: repeat(10, 1fr);
-}
-
-.chessbattle70-square {
-    position: relative;
-    box-sizing: border-box;
-    background-size: cover;
-    background-position: center;
-}
-
-.chessbattle70-square.light {
-    background-image: url("graphics/lightsquare.gif");
-}
-
-.chessbattle70-square.dark {
-    background-image: url("graphics/darksquare.gif");
-}
-
-.chessbattle70-piece {
-    position: absolute;
-    top: 8%;
-    left: 8%;
-    width: 84%;
-    height: 84%;
-    object-fit: contain;
-    pointer-events: none;
-}
-
-.chessbattle70-square.select-source {
-    cursor: pointer;
-    box-shadow: inset 0 0 0 4px #d3a94d;
-}
-
-/* A legal destination the AI hasn't weighed in on yet (or a single-source game with no AI
-   opinion at all) still needs to look clickable, distinct from a plain unreachable square. */
-.chessbattle70-square.neutral {
-    cursor: pointer;
-    box-shadow: inset 0 0 0 3px rgb(100, 100, 100);
-}
-
-.chessbattle70-square.neg-75p { cursor: pointer; box-shadow: inset 0 0 0 4px rgb(255, 0, 0); }
-.chessbattle70-square.neg-50p { cursor: pointer; box-shadow: inset 0 0 0 4px rgb(216, 25, 25); }
-.chessbattle70-square.neg-25p { cursor: pointer; box-shadow: inset 0 0 0 4px rgb(178, 50, 50); }
-.chessbattle70-square.neg-0p  { cursor: pointer; box-shadow: inset 0 0 0 4px rgb(139, 75, 75); }
-.chessbattle70-square.pos-0p  { cursor: pointer; box-shadow: inset 0 0 0 4px rgb(75, 139, 75); }
-.chessbattle70-square.pos-25p { cursor: pointer; box-shadow: inset 0 0 0 4px rgb(50, 178, 50); }
-.chessbattle70-square.pos-50p { cursor: pointer; box-shadow: inset 0 0 0 4px rgb(25, 216, 25); }
-.chessbattle70-square.pos-75p { cursor: pointer; box-shadow: inset 0 0 0 4px rgb(0, 255, 0); }

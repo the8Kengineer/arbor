@@ -8,6 +8,7 @@ Examples using arbor are provided on [GitHub](https://github.com/the8Kengineer/a
 - Mancala
 - Tic-Tac-Toe
 - OneStone
+- Checkers
 
 These examples are demonstrated graphically with Yew on the Arbor [GitHub.io](https://the8Kengineer.github.io/arbor/). 
 ## Documentation
