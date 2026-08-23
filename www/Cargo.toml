@@ -16,6 +16,7 @@ mancala = { path = "../mancala" }
 reversi = { path = "../reversi" }
 connect4 = { path = "../connect4" }
 onestone = { path = "../onestone" }
+chessbattle70 = { path = "../chessbattle70" }
 
 [dependencies.web-sys]
 version = "0.3"

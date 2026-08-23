@@ -15,6 +15,14 @@ pub trait GameInstance<P: GIPlayer, A: GIAction>: GameState<P,A> + Copy + 'stati
     fn name() -> &'static str;
     fn status(&self) -> String;
     fn view(&self, make: yew::Callback<A>, actions: Vec<(A,&'static str)>) -> Html;
+
+    ///Whether MCTS should use GameState::custom_evaluation() instead of a full random
+    ///rollout-to-terminal for this game. Off by default (every other game's state space is
+    ///small enough that plain rollout terminates quickly); a game whose legal-move generation
+    ///is itself expensive and/or whose random games can run very long before naturally ending
+    ///(e.g. chess-like games) should override this to true, or a single rollout can make one
+    ///ponder() call take an extremely long time.
+    fn use_custom_evaluation() -> bool { false }
 }
 
 pub struct GameUI<P: GIPlayer, A: GIAction, I: GameInstance<P,A>> {
@@ -70,10 +78,12 @@ impl<P: GIPlayer, A: GIAction, I: GameInstance<P,A>> GameUI<P,A,I> {
             self.info = Some(mcts.info);
 
         } else {
-            self.mcts = Some(
-                MCTS::new(self.instance)
-                .with_exploration((self.ai_eve as f32)/20.0)
-            );
+            let mut mcts = MCTS::new(self.instance)
+                .with_exploration((self.ai_eve as f32)/20.0);
+            if I::use_custom_evaluation() {
+                mcts = mcts.with_custom_evaluation();
+            }
+            self.mcts = Some(mcts);
             self.ponder(ms);
         }
     }

@@ -34,6 +34,9 @@ fn app(_props: &Props) -> Html {
             <div class="main-layout-cell onestone">
                 <GameUI<onestone::Side,onestone::Move,onestone::Onestone>/>
             </div>
+            <div class="main-layout-cell chessbattle70">
+                <GameUI<chessbattle70::Player,chessbattle70::Move,chessbattle70::Game>/>
+            </div>
         </div>
     }
 }

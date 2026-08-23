@@ -600,6 +600,7 @@ name = "www"
 version = "0.1.0"
 dependencies = [
  "arbor",
+ "chessbattle70",
  "connect4",
  "gloo-console",
  "gloo-timers",

@@ -43,7 +43,7 @@ pub struct SquareMeta {
     pub just_double_stepped: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Board {
     squares: [[Option<Piece>; HEIGHT as usize]; WIDTH as usize],
     meta: [[SquareMeta; HEIGHT as usize]; WIDTH as usize],
