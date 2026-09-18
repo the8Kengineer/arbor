@@ -6,7 +6,9 @@ pub fn description() -> Html {
             <div class="description-header">
                 <h1>{"--- Arbor ---"}</h1>
                 <h2>{"An implementation of Monte Carlo Tree Search"}</h2>
-                <h3>{"Preston Langford June 17, 2022"}</h3>    
+                <h3>{"Originated by Preston Langford June 17, 2022"}</h3>
+                <h3>{"Revised by Kerry Langford August 1, 2026"}</h3>  
+                <h3>{"Extended by Claude-Code Sonnet-5 August 23, 2026"}</h3>    
             </div>
             <div class="description-body">
                 <p>
@@ -16,10 +18,12 @@ pub fn description() -> Html {
                        Search algorithm. It allows a developer to implement an 
                        AI agent for a two player game without the need to 
                        describe heuristics or strategies specific to the game. 
-                       Examples using Arbor are provided below including: 
-                       Reversi, Connect 4, Mancala, and Tic-Tac-Toe. In this 
-                       demonstration, the AI agent is compiled to WASM and it 
-                       runs in your browser. The UI for this website was 
+                       Basic examples using Arbor are provided below including: 
+                       Reversi, Connect 4, Mancala, and Tic-Tac-Toe. 
+                       Extended examples using Arbor are provided below including:
+                       OneStone, Checkers, and ChessBattle70. 
+                       In this demonstration, the AI agent is compiled to WASM  
+                       and it runs in your browser. The UI for this website was 
                        developed with Yew. Source code can be found on "}
                     <a href="https://github.com/the8Kengineer/arbor">{"GitHub"}</a>
                 </p>
