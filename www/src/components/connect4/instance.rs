@@ -9,8 +9,8 @@ impl GIAction for Column {}
 
 fn fmt_disc(disc: &Disc) -> &'static str {
     match disc {
-        Disc::R => "Blue",
-        Disc::Y => "Yellow",
+        Disc::R => "Maroon",
+        Disc::Y => "Gold",
         Disc::N => "Neither",
     }
 }

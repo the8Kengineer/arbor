@@ -370,11 +370,11 @@ li{
 }
 
 .connect4-square.red {
-    background-color: #1a3aad;
+    background-color: #5c1a1a;
 }
 
 .connect4-square.yellow {
-    background-color: #f2c40c;
+    background-color: #ffd700;
 }
 
 /*------------------------------------------------------------------------------
