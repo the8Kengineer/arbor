@@ -7,8 +7,8 @@ pub fn description() -> Html {
                 <h1>{"--- Arbor ---"}</h1>
                 <h2>{"An implementation of Monte Carlo Tree Search"}</h2>
                 <h3>{"Originated by Preston Langford June 17, 2022"}</h3>
-                <h3>{"Revised by Kerry Langford August 1, 2026"}</h3>  
-                <h3>{"Extended by Claude-Code Sonnet-5 August 23, 2026"}</h3>    
+                <h3>{"Revised and Extended by Kerry Langford:"}</h3>
+                <h3>{"using Claude-Code Sonnet-5, August 23, 2026"}</h3>
             </div>
             <div class="description-body">
                 <p>
