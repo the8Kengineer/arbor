@@ -20,6 +20,13 @@ fn win_reason(game: &Onestone, winner: Side) -> &'static str {
     if reached { "Corner Reached!" } else { "All Captured!" }
 }
 
+fn side_name(side: Side) -> &'static str {
+    match side {
+        Side::A => "Side-Blue",
+        Side::B => "Side-Red",
+    }
+}
+
 impl GameInstance<Side,Move> for Onestone {
     fn new() -> Self {
         Onestone::new()
@@ -38,11 +45,11 @@ impl GameInstance<Side,Move> for Onestone {
         if let Some(result) = self.gameover() {
             match result {
                 GameResult::Draw => format!("Draw!"),
-                GameResult::Win  => format!("{} - Side {:?} Wins", win_reason(self,side), side),
-                GameResult::Lose => format!("{} - Side {:?} Wins", win_reason(self,other), other),
+                GameResult::Win  => format!("{} - {} Wins", win_reason(self,side), side_name(side)),
+                GameResult::Lose => format!("{} - {} Wins", win_reason(self,other), side_name(other)),
             }
         } else {
-            format!("Side {:?} to play, die: {}", side, self.die)
+            format!("{} to play, die: {}", side_name(side), self.die)
         }
     }
 

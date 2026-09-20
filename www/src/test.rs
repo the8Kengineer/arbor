@@ -131,7 +131,7 @@ fn onestone_status_names_a_corner_reached_win() {
     board[24] = Square::Piece(Side::A,1); // A reached B's home corner, A's target
     board[0] = Square::Piece(Side::B,1);
     let g = Onestone::debug_state(board,Side::B,1);
-    assert_eq!(g.status(),"Corner Reached! - Side A Wins");
+    assert_eq!(g.status(),"Corner Reached! - Side-Blue Wins");
 }
 
 #[test]
@@ -140,7 +140,7 @@ fn onestone_status_names_an_all_captured_win() {
     let mut board = [Square::Empty; 25];
     board[6] = Square::Piece(Side::A,1); // the only piece left on the board
     let g = Onestone::debug_state(board,Side::B,1);
-    assert_eq!(g.status(),"All Captured! - Side A Wins");
+    assert_eq!(g.status(),"All Captured! - Side-Blue Wins");
 }
 
 #[test]
