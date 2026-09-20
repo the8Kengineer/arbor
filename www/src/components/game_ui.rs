@@ -96,6 +96,38 @@ impl<P: GIPlayer, A: GIAction, I: GameInstance<P,A>> GameUI<P,A,I> {
             link.send_message(Msg::Ponder(ms));
         }).forget();
     }
+
+    ///Actually applies `action` - the caller is responsible for having already established it's
+    ///legal. Used directly (bypassing Msg::Make's self.actions membership check) for the action
+    ///MCTS::best() returns once the AI's own search finishes, since that's a different kind of
+    ///"legal" than a human's click: best() reads legality straight from the search tree, not
+    ///from self.actions, which is a *reporting* list (populated by ply(), rebuilt by colorize())
+    ///that's legitimately empty once the solver collapses the root to a proven Terminal - it has
+    ///no live per-action children left to report values for at that point, but best() still
+    ///correctly names the winning move. Re-validating that move against the now-empty
+    ///self.actions would reject a move that is, in fact, the correct and only sensible one to
+    ///play - which is exactly what happened before this existed (a real bug: the whole AI-turn
+    ///state machine would silently stop, with nothing left scheduled to ever revive it, the
+    ///moment a game got solved deeply enough for the AI to actually win).
+    fn apply_action(&mut self, ctx: &Context<Self>, action: A) {
+        let player = self.instance.player();
+        self.instance = self.instance.make(action);
+        self.mcts = None;
+        self.actions.clear();
+        self.weighted_actions.clear();
+        if player != self.instance.player() {
+            self.ai_turn = !self.ai_turn;
+        }
+        if self.instance.gameover().is_none() {
+            self.instance.actions(&mut |a|
+                self.actions.push((a,"neutral"))
+            );
+            if self.ai_turn {
+                self.ai_start = Instant::now();
+                self.trigger_ai(ctx);
+            }
+        }
+    }
 }
 
 pub enum Msg<A: GIAction> {
@@ -137,30 +169,15 @@ impl<P: GIPlayer, A: GIAction, I: GameInstance<P,A>> Component for GameUI<P,A,I>
             },
 
             Msg::Make(action) => {
-                for (a,_) in &self.actions {
-                    if *a == action {
-                        let player = self.instance.player();
-                        self.instance = self.instance.make(action);
-                        self.mcts = None;
-                        self.actions.clear();
-                        self.weighted_actions.clear();
-                        if player != self.instance.player() {
-                            self.ai_turn = !self.ai_turn;
-                        }
-                        if self.instance.gameover().is_none() {
-                            self.instance.actions(&mut |a| 
-                                self.actions.push((a,"neutral"))
-                            );
-                            if self.ai_turn {
-                                self.ai_start = Instant::now();
-                                self.trigger_ai(ctx);
-                            }    
-                        }
-                        
-                        return true;
-                    }
+                //A human click's action must actually be in the currently-offered list (guards
+                //against a stale click racing a state update); see apply_action's doc comment
+                //for why the AI's own move deliberately skips this same check.
+                if self.actions.iter().any(|(a,_)| *a == action) {
+                    self.apply_action(ctx,action);
+                    true
+                } else {
+                    false
                 }
-                false
             },
 
             Msg::Ponder(ms) => {
@@ -170,17 +187,16 @@ impl<P: GIPlayer, A: GIAction, I: GameInstance<P,A>> Component for GameUI<P,A,I>
                 if self.ai_progress < 100 {
                     self.trigger_ai(ctx);
                 } else {
-                    let mut best = None;
-                    let mut max_w = -0.1;
-                    for (a,w) in &self.weighted_actions {
-                        let weight = *w;
-                        if max_w < weight {
-                            max_w = weight;
-                            best = Some(*a);
-                        }
-                    }
-                    let action = best.expect("Should find best action");
-                    ctx.link().send_message(Msg::Make(action));
+                    //Deliberately calling MCTS::best() here rather than hand-picking the
+                    //highest-weighted entry from weighted_actions (which is only ever populated
+                    //by ply(), a *reporting* API - ply() correctly reports nothing once the
+                    //solver has collapsed the root to a single proven Terminal, since there are
+                    //no live per-action children left to report values for). best() already
+                    //handles that case (and everything else) correctly.
+                    let action = self.mcts.as_ref()
+                        .and_then(|mcts| mcts.best())
+                        .expect("Should find best action");
+                    self.apply_action(ctx,action);
                 }
                 true
             },

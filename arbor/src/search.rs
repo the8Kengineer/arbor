@@ -108,34 +108,39 @@ impl<P: Player, A: Action, S: GameState<P,A>> MCTS<P, A, S> {
             return;
         }
 
-        if let Node::Branch(_,_,player,_,_,c) = self.stack[0] {
-            let mut sibling = Some(c);
-            while let Some(u) = sibling {
-                match self.stack[u] {
-                    Node::Leaf(s,a,p,w,n) |
-                    Node::Branch(s,a,p,w,n,_) => {
-                        let nf = n as f64;
-                        let w = w/nf;
-                        let w = if p == player {w} else {1.0 - w};
-                        let e = (0.5/nf + (w*(1.0 - w)/nf).sqrt()) as f32;
-                        f((a,w as f32,e));
-                        sibling = s.then(||u+1);
-                    },
-                    Node::Terminal(s,a,p,w) => {
-                        let w = if p == player {w} else {1.0 - w};
-                        f((a,w,0.0));
-                        sibling = s.then(||u+1);
-                    },
-                    Node::Unknown(s,a) => {
-                        f((a,0.5,0.5));
-                        sibling = s.then(||u+1);
-                    },
-                    Node::Transpose(_,_,_) => 
-                        panic!("Transpositions should not be possible at root ply")
-                }
+        //A solved position (root proven and collapsed to a single Terminal by the solver - see
+        //go()'s Branch arm) or a root that hasn't been expanded past a single Leaf/Unknown node
+        //yet has no live per-action children to report values for; report nothing rather than
+        //panicking, mirroring best()'s handling of the same cases just above.
+        let (player,c) = match self.stack[0] {
+            Node::Branch(_,_,player,_,_,c) => (player,c),
+            _ => return,
+        };
+
+        let mut sibling = Some(c);
+        while let Some(u) = sibling {
+            match self.stack[u] {
+                Node::Leaf(s,a,p,w,n) |
+                Node::Branch(s,a,p,w,n,_) => {
+                    let nf = n as f64;
+                    let w = w/nf;
+                    let w = if p == player {w} else {1.0 - w};
+                    let e = (0.5/nf + (w*(1.0 - w)/nf).sqrt()) as f32;
+                    f((a,w as f32,e));
+                    sibling = s.then(||u+1);
+                },
+                Node::Terminal(s,a,p,w) => {
+                    let w = if p == player {w} else {1.0 - w};
+                    f((a,w,0.0));
+                    sibling = s.then(||u+1);
+                },
+                Node::Unknown(s,a) => {
+                    f((a,0.5,0.5));
+                    sibling = s.then(||u+1);
+                },
+                Node::Transpose(_,_,_) =>
+                    panic!("Transpositions should not be possible at root ply")
             }
-        } else {
-            debug_assert!(false,"root node should not be a branch");
         }
     }
     

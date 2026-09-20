@@ -807,6 +807,27 @@ fn solver_proves_a_forced_loss_and_stops_further_work() {
     assert!(mcts.best().is_some());
 }
 
+//Regression test for a real bug found via the www frontend: once the solver collapses the root
+//to a proven Terminal (exactly what happens whenever a game reaches a forced win/loss a few
+//plies deep, e.g. any won-or-lost tic-tac-toe position), every existing caller of ply() (like
+//GameUI::ponder(), called on every single AI turn) hit an unconditional `debug_assert!(false,
+//"root node should not be a branch")` in the branch handling everything that ISN'T a live
+//Branch root - including this entirely legitimate, common case. In a debug wasm build
+//(trunk serve) that panics and hangs the whole tab; even in a release build it silently ate the
+//correct behavior. ply_on_gameover_root_calls_nothing (above) only covers the *different* case
+//of a root that was already decided *before* ponder() ever ran (stack stays empty) - it never
+//exercised a root that starts as a live Branch and gets solved down to Terminal mid-search.
+#[test]
+fn ply_on_a_solved_root_calls_nothing_instead_of_panicking() {
+    let mut mcts = MCTS::new(Countdown::new(4));
+    mcts.ponder(5000);
+    assert!(matches!(mcts.stack[0], Node::Terminal(..)),"expected the root to already be solved - see solver_proves_a_forced_loss_and_stops_further_work");
+
+    let mut calls = 0;
+    mcts.ply(&mut |_| calls += 1);
+    assert_eq!(calls,0,"ply() on a solved (Terminal) root should invoke the callback zero times, not panic");
+}
+
 #[test]
 fn solver_proves_a_forced_win_via_a_single_winning_child() {
     //n=5: taking 1 leaves the opponent at the forced-loss position n=4 - the unique winning
