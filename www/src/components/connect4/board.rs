@@ -43,7 +43,7 @@ pub fn board(props: &Props) -> Html {
         for w in 0..W {
             let i = w + r*W;
             let disc = squares[i];
-            let (white, black) = 
+            let (red, yellow) =
                 match disc {
                     Disc::R => (true, false),
                     Disc::Y => (false, true),
@@ -60,7 +60,7 @@ pub fn board(props: &Props) -> Html {
             let make = make.clone();
             let make = Callback::from(move |()| make.emit(COL[i % W]));
             html_squares.push(html! {
-                <Square {white} {black} {make} {color}/>
+                <Square {red} {yellow} {make} {color}/>
             });
         }
     }
