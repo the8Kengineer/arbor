@@ -13,7 +13,7 @@ impl GameInstance<Side,Move> for Onestone {
     }
 
     fn name() -> &'static str {
-        "EinStein würfelt nicht!"
+        "OneStone"
     }
 
     fn status(&self) -> String {
