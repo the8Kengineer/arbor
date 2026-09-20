@@ -59,14 +59,20 @@ pub fn board(props: &Props) -> Html {
     for row in (0..8).rev() {
         for col in 0..8 {
             let cell = match square_at(row,col) {
-                None => html! {<div class="checkers-cell checkers-light"/>},
+                None => {
+                    let onclick = Callback::from(move |()| ());
+                    html! {<Square piece={None} light={true} make={onclick} color="inert"/>}
+                }
                 Some(sq) => {
                     let piece = match square[sq as usize] {
                         Cell::Empty => None,
                         Cell::Occupied(s,k) => Some((s,k)),
                     };
 
-                    let mut color = "neutral";
+                    // "neutral" (an actual action, just not yet AI-scored) needs to look
+                    // different from a square that isn't clickable at all - the latter stays
+                    // "inert".
+                    let mut color = "inert";
                     let mut click = Click::None;
 
                     if let Some(from) = picked {
@@ -103,7 +109,7 @@ pub fn board(props: &Props) -> Html {
                         Click::None => Callback::from(move |()| ()),
                     };
 
-                    html! {<Square {piece} make={onclick} {color}/>}
+                    html! {<Square {piece} light={false} make={onclick} {color}/>}
                 }
             };
             cells.push(cell);
