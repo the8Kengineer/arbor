@@ -119,9 +119,10 @@ fn reversi_status_names_the_winner_with_a_game_specific_message() {
 #[test]
 fn connect4_status_names_the_winner_with_a_game_specific_message() {
     use connect4::connect4::{Connect4,Column::*};
-    // Red fills the bottom row at columns 1-4, completing a horizontal 4-in-a-row.
+    // Disc::R (displayed as "Blue") fills the bottom row at columns 1-4, completing a
+    // horizontal 4-in-a-row.
     let g = Connect4::load(&[C1,C1,C2,C2,C3,C3,C4]);
-    assert_eq!(g.status(),"4 in a Row! - Red Wins");
+    assert_eq!(g.status(),"4 in a Row! - Blue Wins");
 }
 
 #[test]
