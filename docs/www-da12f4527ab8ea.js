@@ -312,7 +312,7 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./www-5f0e86bc0dd9e1f5_bg.js": import0,
+        "./www-da12f4527ab8ea_bg.js": import0,
     };
 }
 
@@ -646,7 +646,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (module_or_path === undefined) {
-        module_or_path = new URL('www-5f0e86bc0dd9e1f5_bg.wasm', import.meta.url);
+        module_or_path = new URL('www-da12f4527ab8ea_bg.wasm', import.meta.url);
     }
     const imports = __wbg_get_imports();
 
