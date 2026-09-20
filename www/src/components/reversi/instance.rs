@@ -44,9 +44,9 @@ impl GameInstance<Disc,Move> for Reversi {
         };
         if let Some(result) = self.gameover() {
             match result {
-                GameResult::Draw => format!("Draw!"),
-                GameResult::Win  => format!("{} wins!", fmt_disc(&side)),
-                GameResult::Lose  => format!("{} wins!", fmt_disc(&other)),
+                GameResult::Draw => format!("Most Discs! - Draw"),
+                GameResult::Win  => format!("Most Discs! - {} Wins", fmt_disc(&side)),
+                GameResult::Lose  => format!("Most Discs! - {} Wins", fmt_disc(&other)),
             }
         } else if pass(self) {
             format!("{} must pass", fmt_disc(&side))

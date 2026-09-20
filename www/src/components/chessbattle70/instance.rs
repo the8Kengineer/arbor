@@ -28,9 +28,9 @@ impl GameInstance<Player, Move> for Game {
                     Player::White => Player::Black,
                     Player::Black => Player::White,
                 };
-                format!("Checkmate! {:?} wins", winner)
+                format!("Checkmate! - {:?} Wins", winner)
             }
-            GameStatus::Stalemate(_) => "Stalemate - draw!".to_string(),
+            GameStatus::Stalemate(_) => "Stalemate! - Draw".to_string(),
         }
     }
 

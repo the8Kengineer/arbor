@@ -15,6 +15,13 @@ fn fmt_side(side: &Side) -> &'static str {
     }
 }
 
+fn side_name(side: &Side) -> &'static str {
+    match side {
+        Side::L => "Left",
+        Side::R => "Right",
+    }
+}
+
 impl GameInstance<Side,Pit> for Mancala {
     fn new() -> Self {
         Mancala::new()
@@ -32,9 +39,9 @@ impl GameInstance<Side,Pit> for Mancala {
         };
         if let Some(result) = self.gameover() {
             match result {
-                GameResult::Draw => format!("Draw!"),
-                GameResult::Win  => format!("{} wins!", fmt_side(&side)),
-                GameResult::Lose  => format!("{} wins!", fmt_side(&other)),
+                GameResult::Draw => format!("Pits Emptied! - Draw"),
+                GameResult::Win  => format!("Pits Emptied! - {} Wins", side_name(&side)),
+                GameResult::Lose  => format!("Pits Emptied! - {} Wins", side_name(&other)),
             }
         } else {
             format!("{}'s turn", fmt_side(&side))

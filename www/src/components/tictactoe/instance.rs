@@ -24,8 +24,8 @@ impl GameInstance<Mark,Grid> for TicTacToe {
                 Mark::N => Mark::N,
             };
             match result {
-                GameResult::Draw => format!("Draw!"),
-                _ => format!("{:?} wins!", other),
+                GameResult::Draw => format!("Board Full! - Draw"),
+                _ => format!("3 in a Row! - {:?} Wins", other),
             }
         } else {
             format!("{:?}'s turn", self.side)

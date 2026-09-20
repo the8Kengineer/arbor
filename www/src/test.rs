@@ -3,7 +3,7 @@
 //this touches yew's Component/html! machinery or web-sys, so it runs as plain native `cargo
 //test` - no wasm target or browser needed.
 use crate::util::colorize;
-use crate::components::game_ui::{fmt_ai_time,fmt_ai_eve};
+use crate::components::game_ui::{fmt_ai_time,fmt_ai_eve,GameInstance};
 
 #[test]
 fn colorize_ranks_the_extremes_and_the_average_into_distinct_bands() {
@@ -78,4 +78,89 @@ fn fmt_ai_eve_scales_the_raw_slider_value_down_to_the_real_exploration_constant(
     assert_eq!(fmt_ai_eve(20),"1.00");
     assert_eq!(fmt_ai_eve(28),"1.40");
     assert_eq!(fmt_ai_eve(40),"2.00");
+}
+
+//Each game's GameInstance::status() names the win condition and the winning side in a game-
+//appropriate way once gameover() fires. Each test below constructs a known terminal position
+//(not driven through real play) and checks the exact rendered string - deliberately including
+//the winner, not just "did it say something", since this exact family of code (find the current
+//player, name "the other side" as the winner) is where a game's win/lose polarity is easiest to
+//get backwards (found and fixed one real case in Connect4's own color labels while writing
+//these: Disc::R/Disc::Y were mislabeled "White"/"Black" instead of "Red"/"Yellow").
+//
+//`use` statements are local to each test rather than at module scope because several of these
+//games each define their own same-named types (Move, Side, Square, Disc, Column, ...) that
+//would otherwise collide if imported together.
+
+#[test]
+fn tictactoe_status_names_the_winner_with_a_game_specific_message() {
+    use tictactoe::{TicTacToe,Grid::*};
+    // X completes the left column (TL,ML,BL) on the 5th move.
+    let g = TicTacToe::load(&[TL,TM,ML,MM,BL]);
+    assert_eq!(g.status(),"3 in a Row! - X Wins");
+}
+
+#[test]
+fn tictactoe_status_names_a_draw() {
+    use tictactoe::{TicTacToe,Grid::*};
+    let g = TicTacToe::load(&[TL,TM,TR,MM,ML,MR,BM,BL,BR]);
+    assert_eq!(g.status(),"Board Full! - Draw");
+}
+
+#[test]
+fn reversi_status_names_the_winner_with_a_game_specific_message() {
+    use reversi::{Reversi,Disc};
+    let f = (1u64 << 33) - 1; // White holds 33 squares
+    let e = !f;               // Black holds the remaining 31
+    let g = Reversi { f, e, side: Disc::W, pass: false };
+    assert_eq!(g.status(),"Most Discs! - White Wins");
+}
+
+#[test]
+fn connect4_status_names_the_winner_with_a_game_specific_message() {
+    use connect4::connect4::{Connect4,Column::*};
+    // Red fills the bottom row at columns 1-4, completing a horizontal 4-in-a-row.
+    let g = Connect4::load(&[C1,C1,C2,C2,C3,C3,C4]);
+    assert_eq!(g.status(),"4 in a Row! - Red Wins");
+}
+
+#[test]
+fn onestone_status_names_a_corner_reached_win() {
+    use onestone::{Onestone,Side,Square};
+    let mut board = [Square::Empty; 25];
+    board[24] = Square::Piece(Side::A,1); // A reached B's home corner, A's target
+    board[0] = Square::Piece(Side::B,1);
+    let g = Onestone::debug_state(board,Side::B,1);
+    assert_eq!(g.status(),"Corner Reached! - Side A Wins");
+}
+
+#[test]
+fn onestone_status_names_an_all_captured_win() {
+    use onestone::{Onestone,Side,Square};
+    let mut board = [Square::Empty; 25];
+    board[6] = Square::Piece(Side::A,1); // the only piece left on the board
+    let g = Onestone::debug_state(board,Side::B,1);
+    assert_eq!(g.status(),"All Captured! - Side A Wins");
+}
+
+#[test]
+fn chessbattle70_status_names_the_winner_with_a_game_specific_message() {
+    use chessbattle70::{Game,Board,Pos,Piece,PieceType,Player,RaptorPachydermRules};
+    // Ladder-mate: two Black Rooks cover every square around White's King.
+    let mut board = Board::empty();
+    board.place_new(Pos::new(3,0),Piece {player: Player::White, kind: PieceType::King});
+    board.place_new(Pos::new(0,1),Piece {player: Player::Black, kind: PieceType::Rook});
+    board.place_new(Pos::new(0,0),Piece {player: Player::Black, kind: PieceType::Rook});
+    let g = Game::from_setup(board,RaptorPachydermRules::FalconMammoth);
+    assert_eq!(g.status(),"Checkmate! - Black Wins");
+}
+
+#[test]
+fn chessbattle70_status_names_a_stalemate_draw() {
+    use chessbattle70::{Game,Board,Pos,Piece,PieceType,Player,RaptorPachydermRules};
+    let mut board = Board::empty();
+    board.place_new(Pos::new(0,9),Piece {player: Player::White, kind: PieceType::King});
+    board.place_new(Pos::new(2,8),Piece {player: Player::Black, kind: PieceType::Queen});
+    let g = Game::from_setup(board,RaptorPachydermRules::FalconMammoth);
+    assert_eq!(g.status(),"Stalemate! - Draw");
 }

@@ -9,8 +9,8 @@ impl GIAction for Column {}
 
 fn fmt_disc(disc: &Disc) -> &'static str {
     match disc {
-        Disc::R => "White",
-        Disc::Y => "Black",
+        Disc::R => "Red",
+        Disc::Y => "Yellow",
         Disc::N => "Neither",
     }
 }
@@ -33,9 +33,9 @@ impl GameInstance<Disc,Column> for Connect4 {
         };
         if let Some(result) = self.gameover() {
             match result {
-                GameResult::Draw => format!("Draw!"),
-                GameResult::Win  => format!("This should not happen"),
-                GameResult::Lose  => format!("{} wins!", fmt_disc(&other)),
+                GameResult::Draw => format!("Board Full! - Draw"),
+                GameResult::Win  => format!("4 in a Row! - {} Wins", fmt_disc(&side)),
+                GameResult::Lose  => format!("4 in a Row! - {} Wins", fmt_disc(&other)),
             }
         } else {
             format!("{}'s turn", fmt_disc(&side))

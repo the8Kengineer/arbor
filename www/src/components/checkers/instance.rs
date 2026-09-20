@@ -24,9 +24,9 @@ impl GameInstance<Side,Move> for Checkers {
         };
         if let Some(result) = self.gameover() {
             match result {
-                GameResult::Draw => format!("Draw!"),
-                GameResult::Win  => format!("{} wins!", side),
-                GameResult::Lose => format!("{} wins!", other),
+                GameResult::Draw => format!("No Progress! - Draw"),
+                GameResult::Win  => format!("Game Over! - {} Wins", side),
+                GameResult::Lose => format!("Game Over! - {} Wins", other),
             }
         } else {
             format!("{} to play", side)
