@@ -22,7 +22,7 @@ body {
 
     gap: 100px;
     /* grid-auto-rows: 1fr; */
-    grid-template-rows: 100% repeat(7,1fr);
+    grid-template-rows: auto repeat(7,1fr);
 }
 
 .main-layout-cell {
