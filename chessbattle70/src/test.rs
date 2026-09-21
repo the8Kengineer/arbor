@@ -333,3 +333,197 @@ fn mcts_finds_a_move_from_the_opening_position() {
     mcts.ponder(200);
     assert!(mcts.best().is_some());
 }
+
+// ---------- SeirawanHarper and Realism rule variants ----------
+//
+// Every test above plays under FalconMammoth (arbor's default and the only
+// ruleset `Game::new()` wires up); the other two documented rulesets -
+// SeirawanHarper (Hawk = Knight+Bishop, Elephant = Knight+Rook, both
+// normally blocked) and Realism (a "flying" diagonal Hawk, and an Elephant
+// whose knight-shaped move needs a clear L-path) - had no coverage at all.
+
+#[test]
+fn seirawan_harper_hawk_combines_knight_leaps_and_bishop_slides() {
+    let mut board = Board::empty();
+    board.place_new(Pos::new(3, 5), Piece { player: Player::White, kind: PieceType::Falcon });
+    // Blocks the bishop-slide component along one diagonal; the knight-leap
+    // component must be unaffected (leaps ignore blockers), and the other
+    // three diagonal directions must still slide freely.
+    board.place_new(Pos::new(4, 6), Piece { player: Player::White, kind: PieceType::Pawn });
+    let game = Game::from_setup(board, RaptorPachydermRules::SeirawanHarper);
+    let destinations: Vec<Pos> = game.moves_for(Pos::new(3, 5)).iter().map(|m| m.to).collect();
+
+    for d in [
+        Pos::new(4, 7), Pos::new(5, 6), Pos::new(5, 4), Pos::new(4, 3),
+        Pos::new(2, 3), Pos::new(1, 4), Pos::new(1, 6), Pos::new(2, 7),
+    ] {
+        assert!(destinations.contains(&d), "expected a knight-shaped leap to {:?}", d);
+    }
+
+    // Bishop-shaped slide toward the friendly blocker stops before it.
+    assert!(!destinations.contains(&Pos::new(4, 6)));
+    assert!(!destinations.contains(&Pos::new(5, 7)));
+
+    // An unblocked diagonal direction still slides all the way to the edge.
+    assert!(destinations.contains(&Pos::new(4, 4)));
+    assert!(destinations.contains(&Pos::new(5, 3)));
+    assert!(destinations.contains(&Pos::new(6, 2)));
+}
+
+#[test]
+fn seirawan_harper_elephant_combines_knight_leaps_and_rook_slides() {
+    let mut board = Board::empty();
+    board.place_new(Pos::new(3, 5), Piece { player: Player::White, kind: PieceType::Mammoth });
+    // Blocks the rook-slide component in one direction only.
+    board.place_new(Pos::new(4, 5), Piece { player: Player::White, kind: PieceType::Pawn });
+    let game = Game::from_setup(board, RaptorPachydermRules::SeirawanHarper);
+    let destinations: Vec<Pos> = game.moves_for(Pos::new(3, 5)).iter().map(|m| m.to).collect();
+
+    for d in [
+        Pos::new(4, 7), Pos::new(5, 6), Pos::new(5, 4), Pos::new(4, 3),
+        Pos::new(2, 3), Pos::new(1, 4), Pos::new(1, 6), Pos::new(2, 7),
+    ] {
+        assert!(destinations.contains(&d), "expected a knight-shaped leap to {:?}", d);
+    }
+
+    assert!(!destinations.contains(&Pos::new(4, 5)), "blocked by a friendly piece");
+    assert!(!destinations.contains(&Pos::new(5, 5)), "can't slide past the blocker");
+    assert!(destinations.contains(&Pos::new(2, 5)), "unblocked rook direction");
+    assert!(destinations.contains(&Pos::new(0, 5)), "unblocked rook direction slides to the edge");
+}
+
+#[test]
+fn realism_hawk_flies_over_blockers_on_its_diagonal_component() {
+    let mut board = Board::empty();
+    board.place_new(Pos::new(0, 0), Piece { player: Player::White, kind: PieceType::Falcon });
+    board.place_new(Pos::new(2, 2), Piece { player: Player::Black, kind: PieceType::Pawn });
+    board.place_new(Pos::new(4, 4), Piece { player: Player::White, kind: PieceType::Pawn });
+    let game = Game::from_setup(board, RaptorPachydermRules::Realism);
+    let moves = game.moves_for(Pos::new(0, 0));
+    let destinations: Vec<Pos> = moves.iter().map(|m| m.to).collect();
+
+    // The knight-shaped component still leaps normally.
+    assert!(destinations.contains(&Pos::new(1, 2)));
+    assert!(destinations.contains(&Pos::new(2, 1)));
+
+    // The diagonal component flies clean over the enemy pawn, capturing it
+    // as one of several possible destinations along the ray rather than
+    // stopping there...
+    assert!(destinations.contains(&Pos::new(1, 1)));
+    let capture = moves.iter().find(|m| m.to == Pos::new(2, 2)).expect("should be able to land on/capture the enemy pawn");
+    assert_eq!(capture.captured.unwrap().0, Pos::new(2, 2));
+    assert!(destinations.contains(&Pos::new(3, 3)));
+
+    // ...and also flies straight over the friendly pawn (never landing on
+    // its square) to reach squares beyond it.
+    assert!(!destinations.contains(&Pos::new(4, 4)), "can't land on a friendly piece");
+    assert!(destinations.contains(&Pos::new(5, 5)), "flies over the friendly pawn");
+    assert!(destinations.contains(&Pos::new(6, 6)));
+}
+
+#[test]
+fn realism_elephant_requires_at_least_one_clear_knight_path() {
+    // Two ways to trace the L from (1,1) to (3,2): via (2,1)+(3,1), or via
+    // (1,2)+(2,2). Blocking one square from each route blocks the move.
+    let mut board = Board::empty();
+    board.place_new(Pos::new(1, 1), Piece { player: Player::White, kind: PieceType::Mammoth });
+    board.place_new(Pos::new(2, 1), Piece { player: Player::Black, kind: PieceType::Pawn });
+    board.place_new(Pos::new(1, 2), Piece { player: Player::Black, kind: PieceType::Pawn });
+    let game = Game::from_setup(board, RaptorPachydermRules::Realism);
+    assert!(
+        !game.moves_for(Pos::new(1, 1)).iter().any(|m| m.to == Pos::new(3, 2)),
+        "both L-routes are blocked"
+    );
+
+    // Clearing just the (1,2) route leaves the other one fully open.
+    let mut board = Board::empty();
+    board.place_new(Pos::new(1, 1), Piece { player: Player::White, kind: PieceType::Mammoth });
+    board.place_new(Pos::new(2, 1), Piece { player: Player::Black, kind: PieceType::Pawn });
+    let game = Game::from_setup(board, RaptorPachydermRules::Realism);
+    assert!(
+        game.moves_for(Pos::new(1, 1)).iter().any(|m| m.to == Pos::new(3, 2)),
+        "the route via (1,2)->(2,2) is clear"
+    );
+}
+
+// ---------- castling application, king-adjacency check, and edge guards ----------
+
+#[test]
+fn castling_actually_relocates_the_rook_and_passes_the_turn() {
+    let mut board = Board::empty();
+    board.place_new(Pos::new(3, 9), Piece { player: Player::White, kind: PieceType::King });
+    board.place_new(Pos::new(0, 9), Piece { player: Player::White, kind: PieceType::Rook });
+    let mut game = Game::from_setup(board, RaptorPachydermRules::FalconMammoth);
+
+    // Go through check::legal_moves (not Game::moves_for, used everywhere
+    // else in this file) so the castling move is actually simulated by
+    // check::apply - moves_for alone never exercises that code path.
+    let legal = check::legal_moves(&game.board, game.current_player, game.rules);
+    let castle = legal.iter()
+        .find(|m| matches!(m.special, SpecialMove::Castle {..}))
+        .copied()
+        .expect("castling should be legal here");
+
+    game.make_move(castle);
+
+    assert_eq!(game.board.get(Pos::new(3, 9)), None, "king's start square should be empty");
+    assert_eq!(game.board.get(Pos::new(1, 9)).map(|p| p.kind), Some(PieceType::King));
+    assert_eq!(game.board.get(Pos::new(0, 9)), None, "rook's start square should be empty");
+    assert_eq!(game.board.get(Pos::new(2, 9)).map(|p| p.kind), Some(PieceType::Rook));
+    assert_eq!(game.current_player, Player::Black);
+}
+
+#[test]
+fn king_in_check_from_an_adjacent_enemy_king() {
+    let mut board = Board::empty();
+    board.place_new(Pos::new(3, 5), Piece { player: Player::White, kind: PieceType::King });
+    board.place_new(Pos::new(3, 6), Piece { player: Player::Black, kind: PieceType::King });
+    assert!(check::king_in_check(&board, Player::White, RaptorPachydermRules::FalconMammoth));
+
+    let mut board = Board::empty();
+    board.place_new(Pos::new(3, 5), Piece { player: Player::White, kind: PieceType::King });
+    board.place_new(Pos::new(0, 0), Piece { player: Player::Black, kind: PieceType::King });
+    assert!(!check::king_in_check(&board, Player::White, RaptorPachydermRules::FalconMammoth));
+}
+
+#[test]
+fn king_in_check_is_false_when_the_king_is_missing() {
+    // Shouldn't happen in a real game (checkmate ends things first), but
+    // king_in_check documents that it returns false rather than panicking.
+    let board = Board::empty();
+    assert!(!check::king_in_check(&board, Player::White, RaptorPachydermRules::FalconMammoth));
+}
+
+#[test]
+fn board_get_and_meta_return_defaults_for_an_out_of_bounds_position() {
+    let board = Board::empty();
+    for p in [Pos::new(-1, 0), Pos::new(WIDTH, 0), Pos::new(0, -1), Pos::new(0, HEIGHT)] {
+        assert_eq!(board.get(p), None);
+        assert_eq!(board.meta(p), crate::board::SquareMeta::default());
+    }
+}
+
+#[test]
+fn piece_type_code_and_number_match_the_design_docs_table() {
+    let table: [(PieceType, char, u8); 8] = [
+        (PieceType::Pawn, 'P', 1),
+        (PieceType::Knight, 'N', 2),
+        (PieceType::Bishop, 'B', 3),
+        (PieceType::Falcon, 'F', 4),
+        (PieceType::Mammoth, 'M', 5),
+        (PieceType::Rook, 'R', 6),
+        (PieceType::Queen, 'Q', 7),
+        (PieceType::King, 'K', 8),
+    ];
+    for (kind, code, number) in table {
+        assert_eq!(kind.code(), code, "{:?}'s single-letter code", kind);
+        assert_eq!(kind.number(), number, "{:?}'s design-doc 1-8 number", kind);
+    }
+}
+
+#[test]
+fn default_game_is_a_fresh_in_progress_random_game() {
+    let g = Game::default();
+    assert!(g.gameover().is_none());
+    assert_eq!(g.current_player, Player::White);
+}
