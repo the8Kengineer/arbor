@@ -224,3 +224,59 @@ fn mcts_finds_a_move_from_the_opening_position() {
     mcts.ponder(2000);
     assert!(mcts.best().is_some());
 }
+
+#[test]
+fn gameover_is_none_mid_game() {
+    let g = Checkers::new();
+    assert!(g.gameover().is_none());
+}
+
+#[test]
+fn hash_is_stable_for_the_same_position() {
+    let g = Checkers::new();
+    assert_eq!(g.hash(), g.hash());
+}
+
+#[test]
+fn hash_differs_after_a_real_move() {
+    let g = Checkers::new();
+    let mut first = None;
+    g.actions(&mut |m| if first.is_none() { first = Some(m); });
+    let next = g.make(first.expect("opening position has legal moves"));
+
+    assert_ne!(g.hash(), next.hash());
+}
+
+#[test]
+fn hash_differs_by_side_to_move_alone() {
+    // Same board, only whose turn it is differs - the hash must still
+    // change, or a search that reaches this position by two different
+    // move orders (once with each side to move) could conflate them.
+    let mut board = empty_board();
+    board[17] = Square::Occupied(Side::Red,Kind::King);
+    board[13] = Square::Occupied(Side::White,Kind::Man);
+
+    let red_to_move = Checkers::debug_state(board,Side::Red);
+    let white_to_move = Checkers::debug_state(board,Side::White);
+
+    assert_ne!(red_to_move.hash(),white_to_move.hash());
+}
+
+#[test]
+fn load_replays_a_move_sequence_equivalently_to_chained_make_calls() {
+    let g0 = Checkers::new();
+    let mut m1 = None;
+    g0.actions(&mut |m| if m1.is_none() { m1 = Some(m); });
+    let g1 = g0.make(m1.expect("opening position has legal moves"));
+
+    let mut m2 = None;
+    g1.actions(&mut |m| if m2.is_none() { m2 = Some(m); });
+    let expected = g1.make(m2.expect("position after one move still has legal moves"));
+
+    let loaded = Checkers::load(&[m1.unwrap(),m2.unwrap()]);
+
+    assert_eq!(loaded.square,expected.square);
+    assert_eq!(loaded.side,expected.side);
+    assert_eq!(loaded.jumping,expected.jumping);
+    assert_eq!(loaded.no_progress,expected.no_progress);
+}
